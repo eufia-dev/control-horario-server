@@ -1,0 +1,62 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../generated/prisma"
+  moduleFormat    = "esm"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["control_horario"]
+}
+
+model company {
+  id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String       @db.VarChar(255)
+  created_at DateTime     @default(now()) @db.Timestamptz(6)
+  project    project[]
+  time_entry time_entry[]
+
+  @@schema("control_horario")
+}
+
+model project {
+  id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String       @db.VarChar(255)
+  company_id String       @db.Uuid
+  is_active  Boolean      @default(true)
+  created_at DateTime     @default(now()) @db.Timestamptz(6)
+  company    company      @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_project_company")
+  time_entry time_entry[]
+
+  @@schema("control_horario")
+}
+
+model time_entry {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String   @db.Uuid
+  project_id String   @db.Uuid
+  company_id String   @db.Uuid
+  started_at DateTime @db.Timestamptz(6)
+  ended_at   DateTime @db.Timestamptz(6)
+  minutes    Int
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  company    company  @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_time_entry_company")
+  project    project  @relation(fields: [project_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_time_entry_project")
+  user       user     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_time_entry_user")
+
+  @@schema("control_horario")
+}
+
+model user {
+  id                   String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                 String       @db.VarChar(255)
+  email                String       @db.VarChar(320)
+  password_hash        String       @db.VarChar(255)
+  is_active            Boolean      @default(true)
+  created_at           DateTime     @default(now()) @db.Timestamptz(6)
+  must_change_password Boolean      @default(true)
+  time_entry           time_entry[]
+
+  @@schema("control_horario")
+}
