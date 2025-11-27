@@ -16,7 +16,6 @@ export class PrismaService
   }
 
   async onModuleInit(): Promise<void> {
-    console.log(process.env.DATABASE_URL);
     await this.$connect();
   }
 

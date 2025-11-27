@@ -10,6 +10,7 @@ export interface AuthUser {
   name: string;
   email: string;
   mustChangePassword: boolean;
+  isAdmin: boolean;
   createdAt: Date;
 }
 
@@ -117,7 +118,8 @@ export class AuthService {
         {
           sub: user.id,
           email: user.email,
-          mustChangePassword: user.must_change_password,
+          mustChangePassword: user.must_change_password ?? false,
+          isAdmin: Boolean(user.is_admin),
         } as JwtPayload,
         { expiresIn: ACCESS_TOKEN_EXPIRES_IN },
       );
@@ -137,7 +139,8 @@ export class AuthService {
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
-      mustChangePassword: user.must_change_password,
+      mustChangePassword: user.must_change_password ?? false,
+      isAdmin: Boolean(user.is_admin),
     };
 
     // Access token (short-lived)
@@ -159,7 +162,8 @@ export class AuthService {
       id: user.id,
       name: user.name,
       email: user.email,
-      mustChangePassword: user.must_change_password,
+      mustChangePassword: user.must_change_password ?? false,
+      isAdmin: Boolean(user.is_admin),
       createdAt: user.created_at,
     };
   }

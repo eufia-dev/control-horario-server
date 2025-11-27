@@ -1,8 +1,8 @@
 generator client {
   provider        = "prisma-client"
   output          = "../generated/prisma"
-  moduleFormat    = "esm"
   previewFeatures = ["multiSchema"]
+  moduleFormat    = "esm"
 }
 
 datasource db {
@@ -56,6 +56,7 @@ model user {
   is_active            Boolean      @default(true)
   created_at           DateTime     @default(now()) @db.Timestamptz(6)
   must_change_password Boolean      @default(true)
+  is_admin             Boolean      @default(false)
   time_entry           time_entry[]
 
   @@schema("control_horario")
