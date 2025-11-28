@@ -26,6 +26,7 @@ model project {
   company_id String       @db.Uuid
   is_active  Boolean      @default(true)
   created_at DateTime     @default(now()) @db.Timestamptz(6)
+  code       String       @db.VarChar(255)
   company    company      @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_project_company")
   time_entry time_entry[]
 
