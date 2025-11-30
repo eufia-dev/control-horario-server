@@ -10,25 +10,26 @@ datasource db {
 }
 
 model organization {
-  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name            String            @db.VarChar(255)
-  created_at      DateTime          @default(now()) @db.Timestamptz(6)
-  company         company[]
-  user            user[]
-  external        external[]
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name           String           @db.VarChar(255)
+  created_at     DateTime         @default(now()) @db.Timestamptz(6)
+  company        company[]
+  user           user[]
+  external       external[]
+  time_entry     time_entry[]
+  external_hours external_hours[]
+  active_timer   active_timer[]
 
   @@schema("control_horario")
 }
 
 model company {
-  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name            String           @db.VarChar(255)
-  organization_id String           @db.Uuid
-  created_at      DateTime         @default(now()) @db.Timestamptz(6)
-  organization    organization     @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_company_organization")
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name            String       @db.VarChar(255)
+  organization_id String       @db.Uuid
+  created_at      DateTime     @default(now()) @db.Timestamptz(6)
+  organization    organization @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_company_organization")
   project         project[]
-  time_entry      time_entry[]
-  external_hours  external_hours[]
 
   @@schema("control_horario")
 }
@@ -43,15 +44,17 @@ model project {
   company        company          @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_project_company")
   time_entry     time_entry[]
   external_hours external_hours[]
+  active_timer   active_timer[]
 
   @@schema("control_horario")
 }
 
 model time_entry_type {
-  id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name       String       @unique @db.VarChar(50)
-  created_at DateTime     @default(now()) @db.Timestamptz(6)
-  time_entry time_entry[]
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name         String         @unique @db.VarChar(50)
+  created_at   DateTime       @default(now()) @db.Timestamptz(6)
+  time_entry   time_entry[]
+  active_timer active_timer[]
 
   @@schema("control_horario")
 }
@@ -60,14 +63,14 @@ model time_entry {
   id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   user_id         String          @db.Uuid
   project_id      String          @db.Uuid
-  company_id      String          @db.Uuid
+  organization_id String          @db.Uuid
   type_id         String          @db.Uuid
   started_at      DateTime        @db.Timestamptz(6)
   ended_at        DateTime        @db.Timestamptz(6)
   minutes         Int
   is_office       Boolean         @default(true)
   created_at      DateTime        @default(now()) @db.Timestamptz(6)
-  company         company         @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_time_entry_company")
+  organization    organization    @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_time_entry_organization")
   project         project         @relation(fields: [project_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_time_entry_project")
   user            user            @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_time_entry_user")
   time_entry_type time_entry_type @relation(fields: [type_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_time_entry_type")
@@ -76,18 +79,19 @@ model time_entry {
 }
 
 model user {
-  id                   String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name                 String       @db.VarChar(255)
-  email                String       @db.VarChar(320)
-  password_hash        String       @db.VarChar(255)
-  organization_id      String       @db.Uuid
-  hourly_cost          Decimal      @db.Decimal(8, 2)
-  is_active            Boolean      @default(true)
-  created_at           DateTime     @default(now()) @db.Timestamptz(6)
-  must_change_password Boolean      @default(true)
-  is_admin             Boolean      @default(false)
-  organization         organization @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_user_organization")
+  id                   String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                 String        @db.VarChar(255)
+  email                String        @db.VarChar(320)
+  password_hash        String        @db.VarChar(255)
+  organization_id      String        @db.Uuid
+  hourly_cost          Decimal       @db.Decimal(8, 2)
+  is_active            Boolean       @default(true)
+  created_at           DateTime      @default(now()) @db.Timestamptz(6)
+  must_change_password Boolean       @default(true)
+  is_admin             Boolean       @default(false)
+  organization         organization  @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_user_organization")
   time_entry           time_entry[]
+  active_timer         active_timer?
 
   @@schema("control_horario")
 }
@@ -106,16 +110,33 @@ model external {
 }
 
 model external_hours {
-  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  external_id        String          @db.Uuid
-  project_id         String          @db.Uuid
-  company_id         String          @db.Uuid
-  date               DateTime        @db.Date
-  minutes            Int
-  created_at         DateTime        @default(now()) @db.Timestamptz(6)
-  external           external @relation(fields: [external_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_external_hours_worker")
-  project            project         @relation(fields: [project_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_external_hours_project")
-  company            company         @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_external_hours_company")
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  external_id     String       @db.Uuid
+  project_id      String       @db.Uuid
+  organization_id String       @db.Uuid
+  date            DateTime     @db.Date
+  minutes         Int
+  created_at      DateTime     @default(now()) @db.Timestamptz(6)
+  external        external     @relation(fields: [external_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_external_hours_worker")
+  project         project      @relation(fields: [project_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_external_hours_project")
+  organization    organization @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_external_hours_organization")
+
+  @@schema("control_horario")
+}
+
+model active_timer {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id         String          @unique @db.Uuid
+  project_id      String          @db.Uuid
+  organization_id String          @db.Uuid
+  type_id         String          @db.Uuid
+  started_at      DateTime        @db.Timestamptz(6)
+  is_office       Boolean         @default(true)
+  created_at      DateTime        @default(now()) @db.Timestamptz(6)
+  user            user            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_active_timer_user")
+  project         project         @relation(fields: [project_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_active_timer_project")
+  organization    organization    @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_active_timer_organization")
+  time_entry_type time_entry_type @relation(fields: [type_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_active_timer_type")
 
   @@schema("control_horario")
 }

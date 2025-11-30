@@ -26,4 +26,3 @@ export class UpdateUserDto {
   @IsBoolean()
   isAdmin: boolean;
 }
-

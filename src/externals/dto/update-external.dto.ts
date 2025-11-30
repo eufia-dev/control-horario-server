@@ -22,4 +22,3 @@ export class UpdateExternalDto {
   @IsOptional()
   isActive?: boolean;
 }
-

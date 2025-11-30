@@ -9,4 +9,3 @@ export class CreateExternalDto {
   @IsPositive()
   hourlyCost: number;
 }
-

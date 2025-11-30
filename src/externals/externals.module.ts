@@ -11,4 +11,3 @@ import { ExternalsService } from './externals.service.js';
   exports: [ExternalsService],
 })
 export class ExternalsModule {}
-
