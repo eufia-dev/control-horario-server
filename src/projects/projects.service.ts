@@ -10,7 +10,8 @@ export interface ProjectResponse {
   code: string;
   isActive: boolean;
   createdAt: Date;
-  company: string;
+  companyId: string;
+  companyName: string;
 }
 
 export interface DeletedProjectResponse {
@@ -25,11 +26,17 @@ export interface DeletedProjectResponse {
 export class ProjectsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(): Promise<ProjectResponse[]> {
+  async findAll(organizationId: string): Promise<ProjectResponse[]> {
     const projects = await this.prisma.project.findMany({
+      where: {
+        company: {
+          organization_id: organizationId,
+        },
+      },
       include: {
         company: {
           select: {
+            id: true,
             name: true,
           },
         },
@@ -42,12 +49,18 @@ export class ProjectsService {
     return projects.map((project) => this.toProjectResponse(project));
   }
 
-  async findOne(id: string): Promise<ProjectResponse> {
-    const project = await this.prisma.project.findUnique({
-      where: { id },
+  async findOne(id: string, organizationId: string): Promise<ProjectResponse> {
+    const project = await this.prisma.project.findFirst({
+      where: {
+        id,
+        company: {
+          organization_id: organizationId,
+        },
+      },
       include: {
         company: {
           select: {
+            id: true,
             name: true,
           },
         },
@@ -61,7 +74,24 @@ export class ProjectsService {
     return this.toProjectResponse(project);
   }
 
-  async create(createProjectDto: CreateProjectDto): Promise<ProjectResponse> {
+  async create(
+    createProjectDto: CreateProjectDto,
+    organizationId: string,
+  ): Promise<ProjectResponse> {
+    // Verify the company belongs to the user's organization
+    const company = await this.prisma.company.findFirst({
+      where: {
+        id: createProjectDto.companyId,
+        organization_id: organizationId,
+      },
+    });
+
+    if (!company) {
+      throw new NotFoundException(
+        `Empresa con ID ${createProjectDto.companyId} no encontrada`,
+      );
+    }
+
     const project = await this.prisma.project.create({
       data: {
         name: createProjectDto.name,
@@ -71,6 +101,7 @@ export class ProjectsService {
       include: {
         company: {
           select: {
+            id: true,
             name: true,
           },
         },
@@ -83,10 +114,35 @@ export class ProjectsService {
   async update(
     id: string,
     updateProjectDto: UpdateProjectDto,
+    organizationId: string,
   ): Promise<ProjectResponse> {
-    const existing = await this.prisma.project.findUnique({ where: { id } });
+    // Verify the project belongs to the user's organization
+    const existing = await this.prisma.project.findFirst({
+      where: {
+        id,
+        company: {
+          organization_id: organizationId,
+        },
+      },
+    });
     if (!existing) {
       throw new NotFoundException(`Proyecto con ID ${id} no encontrado`);
+    }
+
+    // If changing company, verify the new company belongs to the same organization
+    if (updateProjectDto.companyId) {
+      const company = await this.prisma.company.findFirst({
+        where: {
+          id: updateProjectDto.companyId,
+          organization_id: organizationId,
+        },
+      });
+
+      if (!company) {
+        throw new NotFoundException(
+          `Empresa con ID ${updateProjectDto.companyId} no encontrada`,
+        );
+      }
     }
 
     const project = await this.prisma.project.update({
@@ -100,6 +156,7 @@ export class ProjectsService {
       include: {
         company: {
           select: {
+            id: true,
             name: true,
           },
         },
@@ -109,8 +166,18 @@ export class ProjectsService {
     return this.toProjectResponse(project);
   }
 
-  async remove(id: string): Promise<DeletedProjectResponse> {
-    const existing = await this.prisma.project.findUnique({ where: { id } });
+  async remove(
+    id: string,
+    organizationId: string,
+  ): Promise<DeletedProjectResponse> {
+    const existing = await this.prisma.project.findFirst({
+      where: {
+        id,
+        company: {
+          organization_id: organizationId,
+        },
+      },
+    });
     if (!existing) {
       throw new NotFoundException(`Proyecto con ID ${id} no encontrado`);
     }
@@ -123,7 +190,7 @@ export class ProjectsService {
   }
 
   private toProjectResponse(
-    project: project & { company: { name: string } },
+    project: project & { company: { id: string; name: string } },
   ): ProjectResponse {
     return {
       id: project.id,
@@ -131,7 +198,8 @@ export class ProjectsService {
       code: project.code,
       isActive: project.is_active,
       createdAt: project.created_at,
-      company: project.company.name,
+      companyId: project.company.id,
+      companyName: project.company.name,
     };
   }
 

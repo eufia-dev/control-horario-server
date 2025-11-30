@@ -9,8 +9,11 @@ export interface AuthUser {
   id: string;
   name: string;
   email: string;
+  organizationId: string;
+  organizationName: string;
   mustChangePassword: boolean;
   isAdmin: boolean;
+  isActive: boolean;
   createdAt: Date;
 }
 
@@ -41,6 +44,9 @@ export class AuthService {
   async login(email: string, password: string): Promise<AuthResult> {
     const user = await this.prisma.user.findFirst({
       where: { email },
+      include: {
+        organization: true,
+      },
     });
 
     if (!user || !user.is_active) {
@@ -68,6 +74,9 @@ export class AuthService {
   ): Promise<AuthResult> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
+      include: {
+        organization: true,
+      },
     });
 
     if (!user || !user.is_active) {
@@ -87,6 +96,9 @@ export class AuthService {
       data: {
         password_hash: newHash,
         must_change_password: false,
+      },
+      include: {
+        organization: true,
       },
     });
 
@@ -108,6 +120,9 @@ export class AuthService {
 
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub },
+        include: {
+          organization: true,
+        },
       });
 
       if (!user || !user.is_active) {
@@ -118,6 +133,7 @@ export class AuthService {
         {
           sub: user.id,
           email: user.email,
+          organizationId: user.organization_id,
           mustChangePassword: user.must_change_password ?? false,
           isAdmin: Boolean(user.is_admin),
         } as JwtPayload,
@@ -139,6 +155,7 @@ export class AuthService {
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
+      organizationId: user.organization_id,
       mustChangePassword: user.must_change_password ?? false,
       isAdmin: Boolean(user.is_admin),
     };
@@ -157,13 +174,18 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
-  private toAuthUser(user: user): AuthUser {
+  private toAuthUser(
+    user: user & { organization?: { name: string } },
+  ): AuthUser {
     return {
       id: user.id,
       name: user.name,
       email: user.email,
+      organizationId: user.organization_id,
+      organizationName: user.organization?.name ?? '',
       mustChangePassword: user.must_change_password ?? false,
       isAdmin: Boolean(user.is_admin),
+      isActive: user.is_active,
       createdAt: user.created_at,
     };
   }

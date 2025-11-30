@@ -7,10 +7,13 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { AdminGuard } from '../auth/admin.guard.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
 import { CreateProjectDto } from './dto/create-project.dto.js';
 import { UpdateProjectDto } from './dto/update-project.dto.js';
 import {
@@ -19,25 +22,36 @@ import {
   ProjectsService,
 } from './projects.service.js';
 
+type RequestWithUser = Request & { user: JwtPayload };
+
 @Controller('projects')
 @UseGuards(JwtAuthGuard)
 export class ProjectsController {
   constructor(private readonly projectsService: ProjectsService) {}
 
   @Get()
-  findAll(): Promise<ProjectResponse[]> {
-    return this.projectsService.findAll();
+  findAll(@Req() req: RequestWithUser): Promise<ProjectResponse[]> {
+    return this.projectsService.findAll(req.user.organizationId);
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string): Promise<ProjectResponse> {
-    return this.projectsService.findOne(id);
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: RequestWithUser,
+  ): Promise<ProjectResponse> {
+    return this.projectsService.findOne(id, req.user.organizationId);
   }
 
   @Post()
   @UseGuards(AdminGuard)
-  create(@Body() createProjectDto: CreateProjectDto): Promise<ProjectResponse> {
-    return this.projectsService.create(createProjectDto);
+  create(
+    @Body() createProjectDto: CreateProjectDto,
+    @Req() req: RequestWithUser,
+  ): Promise<ProjectResponse> {
+    return this.projectsService.create(
+      createProjectDto,
+      req.user.organizationId,
+    );
   }
 
   @Patch(':id')
@@ -45,15 +59,21 @@ export class ProjectsController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateProjectDto: UpdateProjectDto,
+    @Req() req: RequestWithUser,
   ): Promise<ProjectResponse> {
-    return this.projectsService.update(id, updateProjectDto);
+    return this.projectsService.update(
+      id,
+      updateProjectDto,
+      req.user.organizationId,
+    );
   }
 
   @Delete(':id')
   @UseGuards(AdminGuard)
   remove(
     @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: RequestWithUser,
   ): Promise<DeletedProjectResponse> {
-    return this.projectsService.remove(id);
+    return this.projectsService.remove(id, req.user.organizationId);
   }
 }
