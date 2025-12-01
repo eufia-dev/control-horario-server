@@ -1,8 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateExternalDto } from './dto/create-external.dto.js';
+import { CreateExternalHoursDto } from './dto/create-external-hours.dto.js';
 import { UpdateExternalDto } from './dto/update-external.dto.js';
-import { type external } from '../../generated/prisma/client.js';
+import { UpdateExternalHoursDto } from './dto/update-external-hours.dto.js';
+import {
+  type external,
+  type external_hours,
+} from '../../generated/prisma/client.js';
 
 export interface ExternalResponse {
   id: string;
@@ -18,6 +23,25 @@ export interface DeletedExternalResponse {
   name: string;
   hourlyCost: number;
   isActive: boolean;
+  createdAt: Date;
+}
+
+export interface ExternalHoursResponse {
+  id: string;
+  externalId: string;
+  projectId: string;
+  organizationId: string;
+  date: Date;
+  minutes: number;
+  createdAt: Date;
+}
+
+export interface DeletedExternalHoursResponse {
+  id: string;
+  externalId: string;
+  projectId: string;
+  date: Date;
+  minutes: number;
   createdAt: Date;
 }
 
@@ -139,6 +163,160 @@ export class ExternalsService {
       hourlyCost: Number(external.hourly_cost),
       isActive: external.is_active,
       createdAt: external.created_at,
+    };
+  }
+
+  // External Hours CRUD methods
+
+  async findAllHours(
+    externalId: string,
+    organizationId: string,
+  ): Promise<ExternalHoursResponse[]> {
+    // Verify the external exists and belongs to the organization
+    await this.findOne(externalId, organizationId);
+
+    const hours = await this.prisma.external_hours.findMany({
+      where: {
+        external_id: externalId,
+        organization_id: organizationId,
+      },
+      orderBy: {
+        date: 'desc',
+      },
+    });
+
+    return hours.map((h) => this.toExternalHoursResponse(h));
+  }
+
+  async findOneHours(
+    id: string,
+    externalId: string,
+    organizationId: string,
+  ): Promise<ExternalHoursResponse> {
+    // Verify the external exists and belongs to the organization
+    await this.findOne(externalId, organizationId);
+
+    const hours = await this.prisma.external_hours.findFirst({
+      where: {
+        id,
+        external_id: externalId,
+        organization_id: organizationId,
+      },
+    });
+
+    if (!hours) {
+      throw new NotFoundException(`Horas con ID ${id} no encontradas`);
+    }
+
+    return this.toExternalHoursResponse(hours);
+  }
+
+  async createHours(
+    externalId: string,
+    dto: CreateExternalHoursDto,
+    organizationId: string,
+  ): Promise<ExternalHoursResponse> {
+    // Verify the external exists and belongs to the organization
+    await this.findOne(externalId, organizationId);
+
+    const hours = await this.prisma.external_hours.create({
+      data: {
+        external_id: externalId,
+        project_id: dto.projectId,
+        organization_id: organizationId,
+        date: dto.date,
+        minutes: dto.minutes,
+      },
+    });
+
+    return this.toExternalHoursResponse(hours);
+  }
+
+  async updateHours(
+    id: string,
+    externalId: string,
+    dto: UpdateExternalHoursDto,
+    organizationId: string,
+  ): Promise<ExternalHoursResponse> {
+    // Verify the external exists and belongs to the organization
+    await this.findOne(externalId, organizationId);
+
+    // Verify the hours entry exists
+    const existing = await this.prisma.external_hours.findFirst({
+      where: {
+        id,
+        external_id: externalId,
+        organization_id: organizationId,
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`Horas con ID ${id} no encontradas`);
+    }
+
+    const hours = await this.prisma.external_hours.update({
+      where: { id },
+      data: {
+        project_id: dto.projectId,
+        date: dto.date,
+        minutes: dto.minutes,
+      },
+    });
+
+    return this.toExternalHoursResponse(hours);
+  }
+
+  async removeHours(
+    id: string,
+    externalId: string,
+    organizationId: string,
+  ): Promise<DeletedExternalHoursResponse> {
+    // Verify the external exists and belongs to the organization
+    await this.findOne(externalId, organizationId);
+
+    const existing = await this.prisma.external_hours.findFirst({
+      where: {
+        id,
+        external_id: externalId,
+        organization_id: organizationId,
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`Horas con ID ${id} no encontradas`);
+    }
+
+    const deleted = await this.prisma.external_hours.delete({
+      where: { id },
+    });
+
+    return this.toDeletedExternalHoursResponse(deleted);
+  }
+
+  private toExternalHoursResponse(
+    hours: external_hours,
+  ): ExternalHoursResponse {
+    return {
+      id: hours.id,
+      externalId: hours.external_id,
+      projectId: hours.project_id,
+      organizationId: hours.organization_id,
+      date: hours.date,
+      minutes: hours.minutes,
+      createdAt: hours.created_at,
+    };
+  }
+
+  private toDeletedExternalHoursResponse(
+    hours: external_hours,
+  ): DeletedExternalHoursResponse {
+    return {
+      id: hours.id,
+      externalId: hours.external_id,
+      projectId: hours.project_id,
+      date: hours.date,
+      minutes: hours.minutes,
+      createdAt: hours.created_at,
     };
   }
 }
