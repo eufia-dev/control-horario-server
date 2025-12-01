@@ -8,6 +8,7 @@ import { CompaniesModule } from './companies/companies.module.js';
 import { UsersModule } from './users/users.module.js';
 import { ExternalsModule } from './externals/externals.module.js';
 import { TimeEntriesModule } from './time-entries/time-entries.module.js';
+import { AnalyticsModule } from './analytics/analytics.module.js';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { TimeEntriesModule } from './time-entries/time-entries.module.js';
     UsersModule,
     ExternalsModule,
     TimeEntriesModule,
+    AnalyticsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
