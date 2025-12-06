@@ -16,4 +16,3 @@ export class UpdateExternalHoursDto {
   @IsOptional()
   minutes?: number;
 }
-

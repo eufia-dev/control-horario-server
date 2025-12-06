@@ -13,4 +13,3 @@ export class CreateExternalHoursDto {
   @IsPositive()
   minutes: number;
 }
-

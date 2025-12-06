@@ -1,39 +1,67 @@
 import {
-  IsBoolean,
   IsDateString,
+  IsEnum,
   IsInt,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsPositive,
+  IsString,
   IsUUID,
 } from 'class-validator';
+import { EntryType, EntrySource } from './create-time-entry.dto.js';
 
 export class AdminCreateTimeEntryDto {
   @IsUUID()
   @IsNotEmpty()
-  userId: string;
+  userId!: string;
 
   @IsUUID()
-  @IsNotEmpty()
-  projectId: string;
+  @IsOptional()
+  projectId?: string;
 
-  @IsUUID()
-  @IsNotEmpty()
-  typeId: string;
+  @IsEnum(EntryType)
+  @IsOptional()
+  entryType?: EntryType;
+
+  @IsEnum(EntrySource)
+  @IsOptional()
+  source?: EntrySource;
 
   @IsDateString()
   @IsNotEmpty()
-  startedAt: string;
+  startTime!: string;
 
   @IsDateString()
   @IsNotEmpty()
-  endedAt: string;
+  endTime!: string;
 
   @IsInt()
   @IsPositive()
-  minutes: number;
-
-  @IsBoolean()
   @IsOptional()
-  isOffice?: boolean;
+  durationMinutes?: number;
+
+  @IsNumber()
+  @IsOptional()
+  startLat?: number;
+
+  @IsNumber()
+  @IsOptional()
+  startLng?: number;
+
+  @IsString()
+  @IsOptional()
+  startIp?: string;
+
+  @IsNumber()
+  @IsOptional()
+  endLat?: number;
+
+  @IsNumber()
+  @IsOptional()
+  endLng?: number;
+
+  @IsString()
+  @IsOptional()
+  endIp?: string;
 }

@@ -20,9 +20,9 @@ import { UpdateExternalDto } from './dto/update-external.dto.js';
 import { UpdateExternalHoursDto } from './dto/update-external-hours.dto.js';
 import {
   DeletedExternalHoursResponse,
-  DeletedExternalResponse,
+  DeletedExternalWorkerResponse,
   ExternalHoursResponse,
-  ExternalResponse,
+  ExternalWorkerResponse,
   ExternalsService,
 } from './externals.service.js';
 
@@ -34,27 +34,24 @@ export class ExternalsController {
   constructor(private readonly externalsService: ExternalsService) {}
 
   @Get()
-  findAll(@Req() req: RequestWithUser): Promise<ExternalResponse[]> {
-    return this.externalsService.findAll(req.user.organizationId);
+  findAll(@Req() req: RequestWithUser): Promise<ExternalWorkerResponse[]> {
+    return this.externalsService.findAll(req.user.companyId);
   }
 
   @Get(':id')
   findOne(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithUser,
-  ): Promise<ExternalResponse> {
-    return this.externalsService.findOne(id, req.user.organizationId);
+  ): Promise<ExternalWorkerResponse> {
+    return this.externalsService.findOne(id, req.user.companyId);
   }
 
   @Post()
   create(
     @Body() createExternalDto: CreateExternalDto,
     @Req() req: RequestWithUser,
-  ): Promise<ExternalResponse> {
-    return this.externalsService.create(
-      createExternalDto,
-      req.user.organizationId,
-    );
+  ): Promise<ExternalWorkerResponse> {
+    return this.externalsService.create(createExternalDto, req.user.companyId);
   }
 
   @Patch(':id')
@@ -62,11 +59,11 @@ export class ExternalsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateExternalDto: UpdateExternalDto,
     @Req() req: RequestWithUser,
-  ): Promise<ExternalResponse> {
+  ): Promise<ExternalWorkerResponse> {
     return this.externalsService.update(
       id,
       updateExternalDto,
-      req.user.organizationId,
+      req.user.companyId,
     );
   }
 
@@ -74,8 +71,8 @@ export class ExternalsController {
   remove(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithUser,
-  ): Promise<DeletedExternalResponse> {
-    return this.externalsService.remove(id, req.user.organizationId);
+  ): Promise<DeletedExternalWorkerResponse> {
+    return this.externalsService.remove(id, req.user.companyId);
   }
 
   // External Hours endpoints
@@ -85,10 +82,7 @@ export class ExternalsController {
     @Param('externalId', ParseUUIDPipe) externalId: string,
     @Req() req: RequestWithUser,
   ): Promise<ExternalHoursResponse[]> {
-    return this.externalsService.findAllHours(
-      externalId,
-      req.user.organizationId,
-    );
+    return this.externalsService.findAllHours(externalId, req.user.companyId);
   }
 
   @Get(':externalId/hours/:hoursId')
@@ -100,7 +94,7 @@ export class ExternalsController {
     return this.externalsService.findOneHours(
       hoursId,
       externalId,
-      req.user.organizationId,
+      req.user.companyId,
     );
   }
 
@@ -113,7 +107,7 @@ export class ExternalsController {
     return this.externalsService.createHours(
       externalId,
       dto,
-      req.user.organizationId,
+      req.user.companyId,
     );
   }
 
@@ -128,7 +122,7 @@ export class ExternalsController {
       hoursId,
       externalId,
       dto,
-      req.user.organizationId,
+      req.user.companyId,
     );
   }
 
@@ -141,7 +135,7 @@ export class ExternalsController {
     return this.externalsService.removeHours(
       hoursId,
       externalId,
-      req.user.organizationId,
+      req.user.companyId,
     );
   }
 }

@@ -37,15 +37,13 @@ export class AnalyticsService {
    * Returns aggregated data for all active projects
    */
   async getProjectsSummary(
-    organizationId: string,
+    companyId: string,
   ): Promise<ProjectsSummaryResponse> {
-    // Get all active projects for the organization
+    // Get all active projects for the company
     const projects = await this.prisma.project.findMany({
       where: {
-        is_active: true,
-        company: {
-          organization_id: organizationId,
-        },
+        isActive: true,
+        companyId,
       },
       select: {
         id: true,
@@ -55,26 +53,26 @@ export class AnalyticsService {
     });
 
     // Get internal time entries aggregated by project
-    const internalTimeEntries = await this.prisma.time_entry.groupBy({
-      by: ['project_id'],
+    const internalTimeEntries = await this.prisma.timeEntry.groupBy({
+      by: ['projectId'],
       where: {
-        organization_id: organizationId,
+        companyId,
         project: {
-          is_active: true,
+          isActive: true,
         },
       },
       _sum: {
-        minutes: true,
+        durationMinutes: true,
       },
     });
 
     // Get external hours aggregated by project
-    const externalHours = await this.prisma.external_hours.groupBy({
-      by: ['project_id'],
+    const externalHours = await this.prisma.externalHours.groupBy({
+      by: ['projectId'],
       where: {
-        organization_id: organizationId,
+        companyId,
         project: {
-          is_active: true,
+          isActive: true,
         },
       },
       _sum: {
@@ -83,38 +81,38 @@ export class AnalyticsService {
     });
 
     // Get all time entries with user hourly costs for cost calculation
-    const timeEntriesWithCosts = await this.prisma.time_entry.findMany({
+    const timeEntriesWithCosts = await this.prisma.timeEntry.findMany({
       where: {
-        organization_id: organizationId,
+        companyId,
         project: {
-          is_active: true,
+          isActive: true,
         },
       },
       select: {
-        project_id: true,
-        minutes: true,
+        projectId: true,
+        durationMinutes: true,
         user: {
           select: {
-            hourly_cost: true,
+            hourlyCost: true,
           },
         },
       },
     });
 
     // Get all external hours with external hourly costs
-    const externalHoursWithCosts = await this.prisma.external_hours.findMany({
+    const externalHoursWithCosts = await this.prisma.externalHours.findMany({
       where: {
-        organization_id: organizationId,
+        companyId,
         project: {
-          is_active: true,
+          isActive: true,
         },
       },
       select: {
-        project_id: true,
+        projectId: true,
         minutes: true,
-        external: {
+        externalWorker: {
           select: {
-            hourly_cost: true,
+            hourlyCost: true,
           },
         },
       },
@@ -123,29 +121,37 @@ export class AnalyticsService {
     // Create lookup maps
     const internalMinutesMap = new Map<string, number>();
     internalTimeEntries.forEach((entry) => {
-      internalMinutesMap.set(entry.project_id, entry._sum.minutes || 0);
+      if (entry.projectId) {
+        internalMinutesMap.set(
+          entry.projectId,
+          entry._sum.durationMinutes || 0,
+        );
+      }
     });
 
     const externalMinutesMap = new Map<string, number>();
     externalHours.forEach((entry) => {
-      externalMinutesMap.set(entry.project_id, entry._sum.minutes || 0);
+      externalMinutesMap.set(entry.projectId, entry._sum.minutes || 0);
     });
 
     // Calculate internal costs per project
     const internalCostMap = new Map<string, number>();
     timeEntriesWithCosts.forEach((entry) => {
-      const currentCost = internalCostMap.get(entry.project_id) || 0;
-      const entryCost = (entry.minutes / 60) * Number(entry.user.hourly_cost);
-      internalCostMap.set(entry.project_id, currentCost + entryCost);
+      if (entry.projectId) {
+        const currentCost = internalCostMap.get(entry.projectId) || 0;
+        const entryCost =
+          (entry.durationMinutes / 60) * Number(entry.user.hourlyCost);
+        internalCostMap.set(entry.projectId, currentCost + entryCost);
+      }
     });
 
     // Calculate external costs per project
     const externalCostMap = new Map<string, number>();
     externalHoursWithCosts.forEach((entry) => {
-      const currentCost = externalCostMap.get(entry.project_id) || 0;
+      const currentCost = externalCostMap.get(entry.projectId) || 0;
       const entryCost =
-        (entry.minutes / 60) * Number(entry.external.hourly_cost);
-      externalCostMap.set(entry.project_id, currentCost + entryCost);
+        (entry.minutes / 60) * Number(entry.externalWorker.hourlyCost);
+      externalCostMap.set(entry.projectId, currentCost + entryCost);
     });
 
     // Build the response
@@ -180,15 +186,13 @@ export class AnalyticsService {
    */
   async getProjectBreakdown(
     projectId: string,
-    organizationId: string,
+    companyId: string,
   ): Promise<ProjectBreakdownResponse> {
-    // Verify project exists and belongs to organization
+    // Verify project exists and belongs to company
     const project = await this.prisma.project.findFirst({
       where: {
         id: projectId,
-        company: {
-          organization_id: organizationId,
-        },
+        companyId,
       },
     });
 
@@ -197,19 +201,19 @@ export class AnalyticsService {
     }
 
     // Get internal time entries grouped by user
-    const internalEntries = await this.prisma.time_entry.groupBy({
-      by: ['user_id'],
+    const internalEntries = await this.prisma.timeEntry.groupBy({
+      by: ['userId'],
       where: {
-        project_id: projectId,
-        organization_id: organizationId,
+        projectId,
+        companyId,
       },
       _sum: {
-        minutes: true,
+        durationMinutes: true,
       },
     });
 
     // Get user details for internal workers
-    const userIds = internalEntries.map((e) => e.user_id);
+    const userIds = internalEntries.map((e) => e.userId);
     const users = await this.prisma.user.findMany({
       where: {
         id: { in: userIds },
@@ -217,48 +221,48 @@ export class AnalyticsService {
       select: {
         id: true,
         name: true,
-        hourly_cost: true,
+        hourlyCost: true,
       },
     });
 
     const usersMap = new Map(users.map((u) => [u.id, u]));
 
-    // Get external hours grouped by external
-    const externalEntries = await this.prisma.external_hours.groupBy({
-      by: ['external_id'],
+    // Get external hours grouped by external worker
+    const externalEntries = await this.prisma.externalHours.groupBy({
+      by: ['externalWorkerId'],
       where: {
-        project_id: projectId,
-        organization_id: organizationId,
+        projectId,
+        companyId,
       },
       _sum: {
         minutes: true,
       },
     });
 
-    // Get external details
-    const externalIds = externalEntries.map((e) => e.external_id);
-    const externals = await this.prisma.external.findMany({
+    // Get external worker details
+    const externalWorkerIds = externalEntries.map((e) => e.externalWorkerId);
+    const externalWorkers = await this.prisma.externalWorker.findMany({
       where: {
-        id: { in: externalIds },
+        id: { in: externalWorkerIds },
       },
       select: {
         id: true,
         name: true,
-        hourly_cost: true,
+        hourlyCost: true,
       },
     });
 
-    const externalsMap = new Map(externals.map((e) => [e.id, e]));
+    const externalWorkersMap = new Map(externalWorkers.map((e) => [e.id, e]));
 
     // Build workers array
     const workers: WorkerBreakdownItem[] = [];
 
     // Add internal workers
     internalEntries.forEach((entry) => {
-      const user = usersMap.get(entry.user_id);
+      const user = usersMap.get(entry.userId);
       if (user) {
-        const minutes = entry._sum.minutes || 0;
-        const hourlyCost = Number(user.hourly_cost);
+        const minutes = entry._sum.durationMinutes || 0;
+        const hourlyCost = Number(user.hourlyCost);
         workers.push({
           id: user.id,
           name: user.name,
@@ -272,13 +276,13 @@ export class AnalyticsService {
 
     // Add external workers
     externalEntries.forEach((entry) => {
-      const external = externalsMap.get(entry.external_id);
-      if (external) {
+      const externalWorker = externalWorkersMap.get(entry.externalWorkerId);
+      if (externalWorker) {
         const minutes = entry._sum.minutes || 0;
-        const hourlyCost = Number(external.hourly_cost);
+        const hourlyCost = Number(externalWorker.hourlyCost);
         workers.push({
-          id: external.id,
-          name: external.name,
+          id: externalWorker.id,
+          name: externalWorker.name,
           type: 'external',
           minutes,
           hourlyCost,
@@ -297,61 +301,59 @@ export class AnalyticsService {
    * GET /analytics/workers-summary
    * Returns aggregated data for all active workers (users + externals)
    */
-  async getWorkersSummary(
-    organizationId: string,
-  ): Promise<WorkersSummaryResponse> {
+  async getWorkersSummary(companyId: string): Promise<WorkersSummaryResponse> {
     // Get all active internal users with their time entries aggregated
     const activeUsers = await this.prisma.user.findMany({
       where: {
-        organization_id: organizationId,
-        is_active: true,
+        companyId,
+        isActive: true,
       },
       select: {
         id: true,
         name: true,
-        hourly_cost: true,
+        hourlyCost: true,
       },
     });
 
     // Get time entries grouped by user
-    const userTimeEntries = await this.prisma.time_entry.groupBy({
-      by: ['user_id'],
+    const userTimeEntries = await this.prisma.timeEntry.groupBy({
+      by: ['userId'],
       where: {
-        organization_id: organizationId,
+        companyId,
         user: {
-          is_active: true,
+          isActive: true,
         },
       },
       _sum: {
-        minutes: true,
+        durationMinutes: true,
       },
     });
 
     const userMinutesMap = new Map<string, number>();
     userTimeEntries.forEach((entry) => {
-      userMinutesMap.set(entry.user_id, entry._sum.minutes || 0);
+      userMinutesMap.set(entry.userId, entry._sum.durationMinutes || 0);
     });
 
-    // Get all active externals with their hours aggregated
-    const activeExternals = await this.prisma.external.findMany({
+    // Get all active external workers with their hours aggregated
+    const activeExternalWorkers = await this.prisma.externalWorker.findMany({
       where: {
-        organization_id: organizationId,
-        is_active: true,
+        companyId,
+        isActive: true,
       },
       select: {
         id: true,
         name: true,
-        hourly_cost: true,
+        hourlyCost: true,
       },
     });
 
-    // Get external hours grouped by external
-    const externalHoursEntries = await this.prisma.external_hours.groupBy({
-      by: ['external_id'],
+    // Get external hours grouped by external worker
+    const externalHoursEntries = await this.prisma.externalHours.groupBy({
+      by: ['externalWorkerId'],
       where: {
-        organization_id: organizationId,
-        external: {
-          is_active: true,
+        companyId,
+        externalWorker: {
+          isActive: true,
         },
       },
       _sum: {
@@ -361,7 +363,7 @@ export class AnalyticsService {
 
     const externalMinutesMap = new Map<string, number>();
     externalHoursEntries.forEach((entry) => {
-      externalMinutesMap.set(entry.external_id, entry._sum.minutes || 0);
+      externalMinutesMap.set(entry.externalWorkerId, entry._sum.minutes || 0);
     });
 
     // Build workers array
@@ -370,7 +372,7 @@ export class AnalyticsService {
     // Add internal users
     activeUsers.forEach((user) => {
       const totalMinutes = userMinutesMap.get(user.id) || 0;
-      const hourlyCost = Number(user.hourly_cost);
+      const hourlyCost = Number(user.hourlyCost);
       workers.push({
         id: user.id,
         name: user.name,
@@ -381,13 +383,13 @@ export class AnalyticsService {
       });
     });
 
-    // Add externals
-    activeExternals.forEach((external) => {
-      const totalMinutes = externalMinutesMap.get(external.id) || 0;
-      const hourlyCost = Number(external.hourly_cost);
+    // Add external workers
+    activeExternalWorkers.forEach((externalWorker) => {
+      const totalMinutes = externalMinutesMap.get(externalWorker.id) || 0;
+      const hourlyCost = Number(externalWorker.hourlyCost);
       workers.push({
-        id: external.id,
-        name: external.name,
+        id: externalWorker.id,
+        name: externalWorker.name,
         type: 'external',
         hourlyCost,
         totalMinutes,
@@ -408,29 +410,29 @@ export class AnalyticsService {
   async getWorkerBreakdown(
     workerId: string,
     workerType: 'internal' | 'external',
-    organizationId: string,
+    companyId: string,
   ): Promise<WorkerBreakdownResponse> {
     if (workerType === 'internal') {
-      return this.getInternalWorkerBreakdown(workerId, organizationId);
+      return this.getInternalWorkerBreakdown(workerId, companyId);
     } else {
-      return this.getExternalWorkerBreakdown(workerId, organizationId);
+      return this.getExternalWorkerBreakdown(workerId, companyId);
     }
   }
 
   private async getInternalWorkerBreakdown(
     userId: string,
-    organizationId: string,
+    companyId: string,
   ): Promise<WorkerBreakdownResponse> {
-    // Verify user exists and belongs to organization
+    // Verify user exists and belongs to company
     const user = await this.prisma.user.findFirst({
       where: {
         id: userId,
-        organization_id: organizationId,
+        companyId,
       },
       select: {
         id: true,
         name: true,
-        hourly_cost: true,
+        hourlyCost: true,
       },
     });
 
@@ -439,19 +441,21 @@ export class AnalyticsService {
     }
 
     // Get time entries grouped by project
-    const timeEntries = await this.prisma.time_entry.groupBy({
-      by: ['project_id'],
+    const timeEntries = await this.prisma.timeEntry.groupBy({
+      by: ['projectId'],
       where: {
-        user_id: userId,
-        organization_id: organizationId,
+        userId,
+        companyId,
       },
       _sum: {
-        minutes: true,
+        durationMinutes: true,
       },
     });
 
     // Get project details
-    const projectIds = timeEntries.map((e) => e.project_id);
+    const projectIds = timeEntries
+      .map((e) => e.projectId)
+      .filter((id): id is string => id !== null);
     const projects = await this.prisma.project.findMany({
       where: {
         id: { in: projectIds },
@@ -464,15 +468,16 @@ export class AnalyticsService {
     });
 
     const projectsMap = new Map(projects.map((p) => [p.id, p]));
-    const hourlyCost = Number(user.hourly_cost);
+    const hourlyCost = Number(user.hourlyCost);
 
     // Build projects array
     const projectsBreakdown = timeEntries
       .map((entry) => {
-        const project = projectsMap.get(entry.project_id);
+        if (!entry.projectId) return null;
+        const project = projectsMap.get(entry.projectId);
         if (!project) return null;
 
-        const minutes = entry._sum.minutes || 0;
+        const minutes = entry._sum.durationMinutes || 0;
         return {
           id: project.id,
           name: project.name,
@@ -498,32 +503,34 @@ export class AnalyticsService {
   }
 
   private async getExternalWorkerBreakdown(
-    externalId: string,
-    organizationId: string,
+    externalWorkerId: string,
+    companyId: string,
   ): Promise<WorkerBreakdownResponse> {
-    // Verify external exists and belongs to organization
-    const external = await this.prisma.external.findFirst({
+    // Verify external worker exists and belongs to company
+    const externalWorker = await this.prisma.externalWorker.findFirst({
       where: {
-        id: externalId,
-        organization_id: organizationId,
+        id: externalWorkerId,
+        companyId,
       },
       select: {
         id: true,
         name: true,
-        hourly_cost: true,
+        hourlyCost: true,
       },
     });
 
-    if (!external) {
-      throw new NotFoundException(`Externo con ID ${externalId} no encontrado`);
+    if (!externalWorker) {
+      throw new NotFoundException(
+        `Externo con ID ${externalWorkerId} no encontrado`,
+      );
     }
 
     // Get external hours grouped by project
-    const externalHours = await this.prisma.external_hours.groupBy({
-      by: ['project_id'],
+    const externalHours = await this.prisma.externalHours.groupBy({
+      by: ['projectId'],
       where: {
-        external_id: externalId,
-        organization_id: organizationId,
+        externalWorkerId,
+        companyId,
       },
       _sum: {
         minutes: true,
@@ -531,7 +538,7 @@ export class AnalyticsService {
     });
 
     // Get project details
-    const projectIds = externalHours.map((e) => e.project_id);
+    const projectIds = externalHours.map((e) => e.projectId);
     const projects = await this.prisma.project.findMany({
       where: {
         id: { in: projectIds },
@@ -544,12 +551,12 @@ export class AnalyticsService {
     });
 
     const projectsMap = new Map(projects.map((p) => [p.id, p]));
-    const hourlyCost = Number(external.hourly_cost);
+    const hourlyCost = Number(externalWorker.hourlyCost);
 
     // Build projects array
     const projectsBreakdown = externalHours
       .map((entry) => {
-        const project = projectsMap.get(entry.project_id);
+        const project = projectsMap.get(entry.projectId);
         if (!project) return null;
 
         const minutes = entry._sum.minutes || 0;
@@ -569,8 +576,8 @@ export class AnalyticsService {
     return {
       workerType: 'external',
       worker: {
-        id: external.id,
-        name: external.name,
+        id: externalWorker.id,
+        name: externalWorker.name,
         hourlyCost,
       },
       projects: projectsBreakdown,

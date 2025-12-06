@@ -1,142 +1,376 @@
 generator client {
-  provider        = "prisma-client"
-  output          = "../generated/prisma"
-  moduleFormat    = "esm"
+  provider     = "prisma-client-js"
+  moduleFormat = "esm"
 }
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["control_horario"]
 }
 
-model organization {
-  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name           String           @db.VarChar(255)
-  created_at     DateTime         @default(now()) @db.Timestamptz(6)
-  company        company[]
-  user           user[]
-  external       external[]
-  time_entry     time_entry[]
-  external_hours external_hours[]
-  active_timer   active_timer[]
+// ---------------------------------------------------------
+// 1. COMPANY (Tenant)
+// ---------------------------------------------------------
+model Company {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String   @db.VarChar(255)
+  cif       String?  @unique @db.VarChar(50) // Tax ID
+  logoUrl   String?  @map("logo_url")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  @@schema("control_horario")
+  billingPlan           BillingPlan @default(BASIC) @map("billing_plan")
+  allowUserEditSchedule Boolean     @default(false) @map("allow_user_edit_schedule")
+  inviteCode            String?     @unique @map("invite_code") @db.VarChar(20)
+
+  // Relations
+  users             User[]
+  projects          Project[]
+  projectCategories ProjectCategory[]
+  externalWorkers   ExternalWorker[]
+  timeEntries       TimeEntry[]
+  workSchedules     WorkSchedule[]
+  activeTimers      ActiveTimer[]
+  externalHours     ExternalHours[]
+  invitations       CompanyInvitation[]
+  joinRequests      JoinRequest[]
+
+  @@map("companies") // Table name is now 'companies'
 }
 
-model company {
-  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name            String       @db.VarChar(255)
-  organization_id String       @db.Uuid
-  created_at      DateTime     @default(now()) @db.Timestamptz(6)
-  organization    organization @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_company_organization")
-  project         project[]
-
-  @@schema("control_horario")
+enum BillingPlan {
+  BASIC
+  PRO
 }
 
-model project {
-  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name           String           @db.VarChar(255)
-  company_id     String           @db.Uuid
-  is_active      Boolean          @default(true)
-  created_at     DateTime         @default(now()) @db.Timestamptz(6)
-  code           String           @db.VarChar(255)
-  company        company          @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_project_company")
-  time_entry     time_entry[]
-  external_hours external_hours[]
-  active_timer   active_timer[]
+// ---------------------------------------------------------
+// 2. USERS (Internal Employees & Guests)
+// ---------------------------------------------------------
+model User {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
 
-  @@schema("control_horario")
+  // Renamed to companyId
+  companyId String @map("company_id") @db.Uuid
+
+  authId String @map("auth_id") @db.Uuid
+
+  email     String  @db.VarChar(320)
+  name      String  @db.VarChar(255)
+  phone     String?
+  avatarUrl String? @map("avatar_url")
+
+  hourlyCost Decimal @map("hourly_cost") @db.Decimal(8, 2)
+  isActive   Boolean @default(true) @map("is_active")
+
+  relationType RelationType @default(EMPLOYEE) @map("relation_type")
+  role         UserRole     @default(WORKER)
+
+  nif String?
+  naf String?
+
+  // Relations
+  workSchedules        WorkSchedule[]
+  notificationSettings NotificationSettings?
+
+  // Relation renamed to 'company'
+  company Company @relation(fields: [companyId], references: [id])
+
+  timeEntries TimeEntry[]
+  activeTimer ActiveTimer?
+  auditLogs   AuditLog[]   @relation("Actor")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime? @updatedAt @map("updated_at")
+
+  @@unique([companyId, email])
+  @@unique([companyId, phone])
+  @@index([authId])
+  @@map("users")
 }
 
-model time_entry_type {
-  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name         String         @unique @db.VarChar(50)
-  created_at   DateTime       @default(now()) @db.Timestamptz(6)
-  time_entry   time_entry[]
-  active_timer active_timer[]
-
-  @@schema("control_horario")
+enum UserRole {
+  OWNER
+  ADMIN
+  WORKER
+  AUDITOR
 }
 
-model time_entry {
-  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id         String          @db.Uuid
-  project_id      String          @db.Uuid
-  organization_id String          @db.Uuid
-  type_id         String          @db.Uuid
-  started_at      DateTime        @db.Timestamptz(6)
-  ended_at        DateTime        @db.Timestamptz(6)
-  minutes         Int
-  is_office       Boolean         @default(true)
-  created_at      DateTime        @default(now()) @db.Timestamptz(6)
-  organization    organization    @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_time_entry_organization")
-  project         project         @relation(fields: [project_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_time_entry_project")
-  user            user            @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_time_entry_user")
-  time_entry_type time_entry_type @relation(fields: [type_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_time_entry_type")
-
-  @@schema("control_horario")
+enum RelationType {
+  EMPLOYEE
+  CONTRACTOR
+  GUEST
 }
 
-model user {
-  id                   String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name                 String        @db.VarChar(255)
-  email                String        @db.VarChar(320)
-  password_hash        String        @db.VarChar(255)
-  organization_id      String        @db.Uuid
-  hourly_cost          Decimal       @db.Decimal(8, 2)
-  is_active            Boolean       @default(true)
-  created_at           DateTime      @default(now()) @db.Timestamptz(6)
-  must_change_password Boolean       @default(true)
-  is_admin             Boolean       @default(false)
-  organization         organization  @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_user_organization")
-  time_entry           time_entry[]
-  active_timer         active_timer?
+// ---------------------------------------------------------
+// 3. SCHEDULES & NOTIFICATIONS
+// ---------------------------------------------------------
+model WorkSchedule {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
 
-  @@schema("control_horario")
+  companyId String  @map("company_id") @db.Uuid
+  userId    String? @map("user_id") @db.Uuid
+
+  dayOfWeek Int    @map("day_of_week")
+  startTime String @map("start_time")
+  endTime   String @map("end_time")
+
+  company Company @relation(fields: [companyId], references: [id])
+  user    User?   @relation(fields: [userId], references: [id])
+
+  @@unique([companyId, userId, dayOfWeek])
+  @@map("work_schedules")
 }
 
-model external {
-  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name            String           @db.VarChar(255)
-  organization_id String           @db.Uuid
-  hourly_cost     Decimal          @db.Decimal(8, 2)
-  is_active       Boolean          @default(true)
-  created_at      DateTime         @default(now()) @db.Timestamptz(6)
-  organization    organization     @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_external_organization")
-  external_hours  external_hours[]
+model NotificationSettings {
+  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @unique @map("user_id") @db.Uuid
 
-  @@schema("control_horario")
+  enableReminders  Boolean       @default(true) @map("enable_reminders")
+  channel          NotifyChannel @default(WHATSAPP)
+  toleranceMinutes Int           @default(15) @map("tolerance_minutes")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notification_settings")
 }
 
-model external_hours {
-  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  external_id     String       @db.Uuid
-  project_id      String       @db.Uuid
-  organization_id String       @db.Uuid
-  date            DateTime     @db.Date
-  minutes         Int
-  created_at      DateTime     @default(now()) @db.Timestamptz(6)
-  external        external     @relation(fields: [external_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_external_hours_worker")
-  project         project      @relation(fields: [project_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_external_hours_project")
-  organization    organization @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_external_hours_organization")
-
-  @@schema("control_horario")
+enum NotifyChannel {
+  EMAIL
+  WHATSAPP
 }
 
-model active_timer {
-  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id         String          @unique @db.Uuid
-  project_id      String          @db.Uuid
-  organization_id String          @db.Uuid
-  type_id         String          @db.Uuid
-  started_at      DateTime        @db.Timestamptz(6)
-  is_office       Boolean         @default(true)
-  created_at      DateTime        @default(now()) @db.Timestamptz(6)
-  user            user            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_active_timer_user")
-  project         project         @relation(fields: [project_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_active_timer_project")
-  organization    organization    @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_active_timer_organization")
-  time_entry_type time_entry_type @relation(fields: [type_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_active_timer_type")
+// ---------------------------------------------------------
+// 4. PROJECTS, CATEGORIES & FINANCIALS
+// ---------------------------------------------------------
+model Project {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId  String  @map("company_id") @db.Uuid
+  categoryId String? @map("category_id") @db.Uuid
 
-  @@schema("control_horario")
+  name     String  @db.VarChar(255)
+  code     String  @db.VarChar(50)
+  isActive Boolean @default(true) @map("is_active")
+
+  company  Company          @relation(fields: [companyId], references: [id])
+  category ProjectCategory? @relation(fields: [categoryId], references: [id])
+
+  timeEntries    TimeEntry[]
+  externalHours  ExternalHours[]
+  activeTimers   ActiveTimer[]
+  financialItems ProjectFinancialItem[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("projects")
+}
+
+model ProjectCategory {
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String  @map("company_id") @db.Uuid
+  name      String  @db.VarChar(100)
+  color     String?
+
+  company  Company   @relation(fields: [companyId], references: [id])
+  projects Project[]
+
+  @@map("project_categories")
+}
+
+model ProjectFinancialItem {
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId String @map("project_id") @db.Uuid
+
+  type     FinancialType
+  category FinancialCategory
+
+  description String   @db.VarChar(255)
+  amount      Decimal  @db.Decimal(10, 2)
+  date        DateTime @db.Date
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("project_financial_items")
+}
+
+enum FinancialType {
+  REVENUE
+  EXPENSE
+}
+
+enum FinancialCategory {
+  EXTERNAL_SERVICE
+  GENERAL_COST
+  TAX
+  INCOME
+  OTHER
+}
+
+// ---------------------------------------------------------
+// 5. TIME TRACKING
+// ---------------------------------------------------------
+model ActiveTimer {
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String  @unique @map("user_id") @db.Uuid
+  companyId String  @map("company_id") @db.Uuid
+  projectId String? @map("project_id") @db.Uuid
+
+  startTime DateTime  @map("start_time") @db.Timestamptz(6)
+  entryType EntryType @default(WORK) @map("entry_type")
+
+  lat       Float?
+  lng       Float?
+  ipAddress String? @map("ip_address")
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id])
+  company Company  @relation(fields: [companyId], references: [id])
+
+  @@map("active_timers")
+}
+
+model TimeEntry {
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String  @map("user_id") @db.Uuid
+  companyId String  @map("company_id") @db.Uuid
+  projectId String? @map("project_id") @db.Uuid
+
+  startTime       DateTime @map("start_time") @db.Timestamptz(6)
+  endTime         DateTime @map("end_time") @db.Timestamptz(6)
+  durationMinutes Int      @map("duration_minutes")
+
+  entryType EntryType   @default(WORK) @map("entry_type")
+  source    EntrySource @default(WEB)
+
+  startLat Float?  @map("start_lat")
+  startLng Float?  @map("start_lng")
+  startIp  String? @map("start_ip")
+  endLat   Float?  @map("end_lat")
+  endLng   Float?  @map("end_lng")
+  endIp    String? @map("end_ip")
+
+  isManual   Boolean @default(false) @map("is_manual")
+  isModified Boolean @default(false) @map("is_modified")
+
+  user      User       @relation(fields: [userId], references: [id])
+  company   Company    @relation(fields: [companyId], references: [id])
+  project   Project?   @relation(fields: [projectId], references: [id])
+  auditLogs AuditLog[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, startTime])
+  @@map("time_entries")
+}
+
+enum EntryType {
+  WORK
+  PAUSE_COFFEE
+  PAUSE_LUNCH
+  PAUSE_PERSONAL
+}
+
+enum EntrySource {
+  WEB
+  APP
+  WHATSAPP
+}
+
+// ---------------------------------------------------------
+// 6. COMPLIANCE AUDIT LOG
+// ---------------------------------------------------------
+model AuditLog {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  timeEntryId String @map("time_entry_id") @db.Uuid
+  actorId     String @map("actor_id") @db.Uuid
+
+  action  String
+  reason  String
+  changes Json
+
+  timeEntry TimeEntry @relation(fields: [timeEntryId], references: [id])
+  actor     User      @relation("Actor", fields: [actorId], references: [id])
+
+  timestamp DateTime @default(now())
+
+  @@map("audit_logs")
+}
+
+// ---------------------------------------------------------
+// 7. EXTERNAL WORKERS
+// ---------------------------------------------------------
+model ExternalWorker {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId  String  @map("company_id") @db.Uuid
+  name       String  @db.VarChar(255)
+  hourlyCost Decimal @map("hourly_cost") @db.Decimal(8, 2)
+  isActive   Boolean @default(true) @map("is_active")
+
+  company       Company         @relation(fields: [companyId], references: [id])
+  externalHours ExternalHours[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("external_workers")
+}
+
+model ExternalHours {
+  id               String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  externalWorkerId String @map("external_worker_id") @db.Uuid
+  projectId        String @map("project_id") @db.Uuid
+  companyId        String @map("company_id") @db.Uuid
+
+  date    DateTime @db.Date
+  minutes Int
+  cost    Decimal  @default(0) @db.Decimal(10, 2)
+
+  externalWorker ExternalWorker @relation(fields: [externalWorkerId], references: [id])
+  project        Project        @relation(fields: [projectId], references: [id])
+  company        Company        @relation(fields: [companyId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("external_hours")
+}
+
+// ---------------------------------------------------------
+// 8. COMPANY INVITATIONS & JOIN REQUESTS
+// ---------------------------------------------------------
+model CompanyInvitation {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String    @map("company_id") @db.Uuid
+  email     String    @db.VarChar(320)
+  role      UserRole  @default(WORKER)
+  token     String    @unique @db.VarChar(64)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([email])
+  @@map("company_invitations")
+}
+
+model JoinRequest {
+  id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId    String            @map("company_id") @db.Uuid
+  authId       String            @map("auth_id") @db.Uuid
+  email        String            @db.VarChar(320)
+  name         String            @db.VarChar(255)
+  status       JoinRequestStatus @default(PENDING)
+  reviewedAt   DateTime?         @map("reviewed_at") @db.Timestamptz(6)
+  reviewedById String?           @map("reviewed_by_id") @db.Uuid
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, authId])
+  @@index([authId])
+  @@map("join_requests")
+}
+
+enum JoinRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }

@@ -24,7 +24,7 @@ export class UsersController {
 
   @Get()
   findAll(@Req() req: RequestWithUser): Promise<UserResponse[]> {
-    return this.usersService.findAll(req.user.organizationId);
+    return this.usersService.findAll(req.user.companyId);
   }
 
   @Get(':id')
@@ -32,7 +32,7 @@ export class UsersController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithUser,
   ): Promise<UserResponse> {
-    return this.usersService.findOne(id, req.user.organizationId);
+    return this.usersService.findOne(id, req.user.companyId);
   }
 
   @Patch(':id')
@@ -41,6 +41,6 @@ export class UsersController {
     @Body() updateUserDto: UpdateUserDto,
     @Req() req: RequestWithUser,
   ): Promise<UserResponse> {
-    return this.usersService.update(id, updateUserDto, req.user.organizationId);
+    return this.usersService.update(id, updateUserDto, req.user.companyId);
   }
 }

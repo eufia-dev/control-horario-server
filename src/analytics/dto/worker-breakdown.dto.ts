@@ -25,4 +25,3 @@ export interface WorkerBreakdownResponse {
   worker: WorkerInfo;
   projects: WorkerProjectItem[];
 }
-

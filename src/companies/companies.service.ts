@@ -1,37 +1,32 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { type company } from '../../generated/prisma/client.js';
+import type { Company, BillingPlan } from '@prisma/client';
+import { randomBytes } from 'crypto';
 
 export interface CompanyResponse {
   id: string;
   name: string;
-  organizationId: string;
+  cif: string | null;
+  logoUrl: string | null;
+  billingPlan: BillingPlan;
+  allowUserEditSchedule: boolean;
+  inviteCode: string | null;
   createdAt: Date;
+}
+
+export interface CompanyPublicResponse {
+  id: string;
+  name: string;
+  logoUrl: string | null;
 }
 
 @Injectable()
 export class CompaniesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(organizationId: string): Promise<CompanyResponse[]> {
-    const companies = await this.prisma.company.findMany({
-      where: {
-        organization_id: organizationId,
-      },
-      orderBy: {
-        created_at: 'desc',
-      },
-    });
-
-    return companies.map((company) => this.toCompanyResponse(company));
-  }
-
-  async findOne(id: string, organizationId: string): Promise<CompanyResponse> {
-    const company = await this.prisma.company.findFirst({
-      where: {
-        id,
-        organization_id: organizationId,
-      },
+  async findOne(id: string): Promise<CompanyResponse> {
+    const company = await this.prisma.company.findUnique({
+      where: { id },
     });
 
     if (!company) {
@@ -41,12 +36,109 @@ export class CompaniesService {
     return this.toCompanyResponse(company);
   }
 
-  private toCompanyResponse(company: company): CompanyResponse {
+  /**
+   * Search companies by name (public - returns limited info)
+   */
+  async search(query: string): Promise<CompanyPublicResponse[]> {
+    if (!query || query.length < 2) {
+      return [];
+    }
+
+    const companies = await this.prisma.company.findMany({
+      where: {
+        name: {
+          contains: query,
+          mode: 'insensitive',
+        },
+      },
+      take: 10,
+      orderBy: { name: 'asc' },
+    });
+
+    return companies.map((c) => this.toPublicResponse(c));
+  }
+
+  /**
+   * Find company by invite code (public - returns limited info)
+   */
+  async findByInviteCode(code: string): Promise<CompanyPublicResponse> {
+    const company = await this.prisma.company.findUnique({
+      where: { inviteCode: code.toUpperCase() },
+    });
+
+    if (!company) {
+      throw new NotFoundException('Código de invitación no válido');
+    }
+
+    return this.toPublicResponse(company);
+  }
+
+  /**
+   * Generate or regenerate invite code for a company
+   */
+  async generateInviteCode(companyId: string): Promise<{ inviteCode: string }> {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+    });
+
+    if (!company) {
+      throw new NotFoundException('Empresa no encontrada');
+    }
+
+    // Generate a unique 8-character code
+    let inviteCode: string;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    do {
+      inviteCode = randomBytes(4).toString('hex').toUpperCase();
+      const existing = await this.prisma.company.findUnique({
+        where: { inviteCode },
+      });
+      if (!existing) break;
+      attempts++;
+    } while (attempts < maxAttempts);
+
+    if (attempts >= maxAttempts) {
+      throw new Error('No se pudo generar un código único');
+    }
+
+    await this.prisma.company.update({
+      where: { id: companyId },
+      data: { inviteCode },
+    });
+
+    return { inviteCode };
+  }
+
+  /**
+   * Remove invite code from a company (disable public joining)
+   */
+  async removeInviteCode(companyId: string): Promise<void> {
+    await this.prisma.company.update({
+      where: { id: companyId },
+      data: { inviteCode: null },
+    });
+  }
+
+  private toCompanyResponse(company: Company): CompanyResponse {
     return {
       id: company.id,
       name: company.name,
-      organizationId: company.organization_id,
-      createdAt: company.created_at,
+      cif: company.cif,
+      logoUrl: company.logoUrl,
+      billingPlan: company.billingPlan,
+      allowUserEditSchedule: company.allowUserEditSchedule,
+      inviteCode: company.inviteCode,
+      createdAt: company.createdAt,
+    };
+  }
+
+  private toPublicResponse(company: Company): CompanyPublicResponse {
+    return {
+      id: company.id,
+      name: company.name,
+      logoUrl: company.logoUrl,
     };
   }
 }

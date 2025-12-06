@@ -5,41 +5,47 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { UpdateUserDto } from './dto/update-user.dto.js';
-import { type user } from '../../generated/prisma/client.js';
-import { Decimal } from '../../generated/prisma/internal/prismaNamespace.js';
+import type { User, UserRole } from '@prisma/client';
 
 export interface UserResponse {
   id: string;
+  authId: string;
   name: string;
   email: string;
+  phone: string | null;
+  avatarUrl: string | null;
   hourlyCost: number;
   isActive: boolean;
+  role: UserRole;
+  relationType: string;
+  nif: string | null;
+  naf: string | null;
   createdAt: Date;
-  isAdmin: boolean;
+  updatedAt: Date | null;
 }
 
 @Injectable()
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(organizationId: string): Promise<UserResponse[]> {
+  async findAll(companyId: string): Promise<UserResponse[]> {
     const users = await this.prisma.user.findMany({
       where: {
-        organization_id: organizationId,
+        companyId,
       },
       orderBy: {
-        created_at: 'desc',
+        createdAt: 'desc',
       },
     });
 
     return users.map((user) => this.toUserResponse(user));
   }
 
-  async findOne(id: string, organizationId: string): Promise<UserResponse> {
+  async findOne(id: string, companyId: string): Promise<UserResponse> {
     const user = await this.prisma.user.findFirst({
       where: {
         id,
-        organization_id: organizationId,
+        companyId,
       },
     });
 
@@ -53,13 +59,13 @@ export class UsersService {
   async update(
     id: string,
     updateUserDto: UpdateUserDto,
-    organizationId: string,
+    companyId: string,
   ): Promise<UserResponse> {
-    // Verify the user belongs to the organization
+    // Verify the user belongs to the company
     const existing = await this.prisma.user.findFirst({
       where: {
         id,
-        organization_id: organizationId,
+        companyId,
       },
     });
 
@@ -68,11 +74,11 @@ export class UsersService {
     }
 
     // Check if email is being changed and if it's already in use
-    if (updateUserDto.email !== existing.email) {
+    if (updateUserDto.email && updateUserDto.email !== existing.email) {
       const emailExists = await this.prisma.user.findFirst({
         where: {
           email: updateUserDto.email,
-          organization_id: organizationId,
+          companyId,
           id: { not: id },
         },
       });
@@ -89,24 +95,34 @@ export class UsersService {
       data: {
         name: updateUserDto.name,
         email: updateUserDto.email,
-        hourly_cost: new Decimal(updateUserDto.hourlyCost),
-        is_active: updateUserDto.isActive,
-        is_admin: updateUserDto.isAdmin,
+        phone: updateUserDto.phone,
+        hourlyCost: updateUserDto.hourlyCost
+          ? updateUserDto.hourlyCost
+          : undefined,
+        isActive: updateUserDto.isActive,
+        role: updateUserDto.role,
       },
     });
 
     return this.toUserResponse(user);
   }
 
-  private toUserResponse(user: user): UserResponse {
+  private toUserResponse(user: User): UserResponse {
     return {
       id: user.id,
+      authId: user.authId,
       name: user.name,
       email: user.email,
-      hourlyCost: Number(user.hourly_cost),
-      isActive: user.is_active,
-      createdAt: user.created_at,
-      isAdmin: user.is_admin,
+      phone: user.phone,
+      avatarUrl: user.avatarUrl,
+      hourlyCost: Number(user.hourlyCost),
+      isActive: user.isActive,
+      role: user.role,
+      relationType: user.relationType,
+      nif: user.nif,
+      naf: user.naf,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
     };
   }
 }

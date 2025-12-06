@@ -9,21 +9,25 @@ import { AdminCreateTimeEntryDto } from './dto/admin-create-time-entry.dto.js';
 import { UpdateTimeEntryDto } from './dto/update-time-entry.dto.js';
 import { StartTimerDto } from './dto/start-timer.dto.js';
 import { SwitchTimerDto } from './dto/switch-timer.dto.js';
-import {
-  type time_entry,
-  type active_timer,
-} from '../../generated/prisma/client.js';
+import type {
+  TimeEntry,
+  ActiveTimer,
+  EntryType,
+  EntrySource,
+} from '@prisma/client';
 
 export interface TimeEntryResponse {
   id: string;
   userId: string;
-  projectId: string;
-  organizationId: string;
-  typeId: string;
-  startedAt: Date;
-  endedAt: Date;
-  minutes: number;
-  isOffice: boolean;
+  projectId: string | null;
+  companyId: string;
+  startTime: Date;
+  endTime: Date;
+  durationMinutes: number;
+  entryType: EntryType;
+  source: EntrySource;
+  isManual: boolean;
+  isModified: boolean;
   createdAt: Date;
   user?: {
     id: string;
@@ -33,40 +37,29 @@ export interface TimeEntryResponse {
   project?: {
     id: string;
     name: string;
-    code: string;
-  };
-  organization?: {
-    id: string;
-    name: string;
-  };
-  timeEntryType?: {
-    id: string;
-    name: string;
-  };
+    code: string | null;
+  } | null;
 }
 
 export interface DeletedTimeEntryResponse {
   id: string;
   userId: string;
-  projectId: string;
-  organizationId: string;
-  typeId: string;
-  startedAt: Date;
-  endedAt: Date;
-  minutes: number;
-  isOffice: boolean;
+  projectId: string | null;
+  companyId: string;
+  startTime: Date;
+  endTime: Date;
+  durationMinutes: number;
+  entryType: EntryType;
   createdAt: Date;
 }
 
 export interface ActiveTimerResponse {
   id: string;
   userId: string;
-  projectId: string;
-  organizationId: string;
-  typeId: string;
-  startedAt: Date;
-  isOffice: boolean;
-  createdAt: Date;
+  projectId: string | null;
+  companyId: string;
+  startTime: Date;
+  entryType: EntryType;
   user?: {
     id: string;
     name: string;
@@ -75,16 +68,8 @@ export interface ActiveTimerResponse {
   project?: {
     id: string;
     name: string;
-    code: string;
-  };
-  organization?: {
-    id: string;
-    name: string;
-  };
-  timeEntryType?: {
-    id: string;
-    name: string;
-  };
+    code: string | null;
+  } | null;
 }
 
 export interface SwitchTimerResponse {
@@ -92,82 +77,50 @@ export interface SwitchTimerResponse {
   activeTimer: ActiveTimerResponse;
 }
 
-export interface TimeEntryTypeResponse {
-  id: string;
-  name: string;
-  createdAt: Date;
-}
-
 @Injectable()
 export class TimeEntriesService {
   constructor(private readonly prisma: PrismaService) {}
-
-  // ============================================
-  // TIME ENTRY TYPES
-  // ============================================
-
-  async findAllTypes(): Promise<TimeEntryTypeResponse[]> {
-    const types = await this.prisma.time_entry_type.findMany({
-      orderBy: { name: 'asc' },
-    });
-
-    return types.map((type) => ({
-      id: type.id,
-      name: type.name,
-      createdAt: type.created_at,
-    }));
-  }
 
   // ============================================
   // ADMIN METHODS (no ownership checks needed)
   // ============================================
 
   async findAll(
-    organizationId: string,
+    companyId: string,
     userId?: string,
   ): Promise<TimeEntryResponse[]> {
-    const whereClause: Record<string, unknown> = {
-      user: {
-        organization_id: organizationId,
-      },
-    };
+    const whereClause: { companyId: string; userId?: string } = { companyId };
 
     if (userId) {
-      whereClause.user_id = userId;
+      whereClause.userId = userId;
     }
 
-    const timeEntries = await this.prisma.time_entry.findMany({
+    const timeEntries = await this.prisma.timeEntry.findMany({
       where: whereClause,
       include: {
-        user: true,
-        project: true,
-        organization: true,
-        time_entry_type: true,
+        user: {
+          select: { id: true, name: true, email: true },
+        },
+        project: {
+          select: { id: true, name: true, code: true },
+        },
       },
-      orderBy: {
-        started_at: 'desc',
-      },
+      orderBy: { startTime: 'desc' },
     });
 
     return timeEntries.map((entry) => this.toTimeEntryResponse(entry));
   }
 
-  async findOne(
-    id: string,
-    organizationId: string,
-  ): Promise<TimeEntryResponse> {
-    const timeEntry = await this.prisma.time_entry.findFirst({
-      where: {
-        id,
-        user: {
-          organization_id: organizationId,
-        },
-      },
+  async findOne(id: string, companyId: string): Promise<TimeEntryResponse> {
+    const timeEntry = await this.prisma.timeEntry.findFirst({
+      where: { id, companyId },
       include: {
-        user: true,
-        project: true,
-        organization: true,
-        time_entry_type: true,
+        user: {
+          select: { id: true, name: true, email: true },
+        },
+        project: {
+          select: { id: true, name: true, code: true },
+        },
       },
     });
 
@@ -182,35 +135,27 @@ export class TimeEntriesService {
 
   async adminCreate(
     dto: AdminCreateTimeEntryDto,
-    organizationId: string,
+    companyId: string,
   ): Promise<TimeEntryResponse> {
-    // Verify the user belongs to the organization
+    // Verify the user belongs to the company
     const user = await this.prisma.user.findFirst({
-      where: {
-        id: dto.userId,
-        organization_id: organizationId,
-      },
+      where: { id: dto.userId, companyId },
     });
 
     if (!user) {
       throw new NotFoundException(`Usuario con ID ${dto.userId} no encontrado`);
     }
 
-    return this.createEntry(dto, dto.userId, organizationId);
+    return this.createEntry(dto, dto.userId, companyId);
   }
 
   async update(
     id: string,
     updateTimeEntryDto: UpdateTimeEntryDto,
-    organizationId: string,
+    companyId: string,
   ): Promise<TimeEntryResponse> {
-    const existing = await this.prisma.time_entry.findFirst({
-      where: {
-        id,
-        user: {
-          organization_id: organizationId,
-        },
-      },
+    const existing = await this.prisma.timeEntry.findFirst({
+      where: { id, companyId },
     });
 
     if (!existing) {
@@ -219,20 +164,15 @@ export class TimeEntriesService {
       );
     }
 
-    return this.updateEntry(id, updateTimeEntryDto, organizationId);
+    return this.updateEntry(id, updateTimeEntryDto, companyId);
   }
 
   async remove(
     id: string,
-    organizationId: string,
+    companyId: string,
   ): Promise<DeletedTimeEntryResponse> {
-    const existing = await this.prisma.time_entry.findFirst({
-      where: {
-        id,
-        user: {
-          organization_id: organizationId,
-        },
-      },
+    const existing = await this.prisma.timeEntry.findFirst({
+      where: { id, companyId },
     });
 
     if (!existing) {
@@ -241,7 +181,7 @@ export class TimeEntriesService {
       );
     }
 
-    const deleted = await this.prisma.time_entry.delete({
+    const deleted = await this.prisma.timeEntry.delete({
       where: { id },
     });
 
@@ -254,24 +194,19 @@ export class TimeEntriesService {
 
   async findMyEntries(
     userId: string,
-    organizationId: string,
+    companyId: string,
   ): Promise<TimeEntryResponse[]> {
-    const timeEntries = await this.prisma.time_entry.findMany({
-      where: {
-        user_id: userId,
+    const timeEntries = await this.prisma.timeEntry.findMany({
+      where: { userId, companyId },
+      include: {
         user: {
-          organization_id: organizationId,
+          select: { id: true, name: true, email: true },
+        },
+        project: {
+          select: { id: true, name: true, code: true },
         },
       },
-      include: {
-        user: true,
-        project: true,
-        organization: true,
-        time_entry_type: true,
-      },
-      orderBy: {
-        started_at: 'desc',
-      },
+      orderBy: { startTime: 'desc' },
     });
 
     return timeEntries.map((entry) => this.toTimeEntryResponse(entry));
@@ -280,21 +215,17 @@ export class TimeEntriesService {
   async findMyOne(
     id: string,
     userId: string,
-    organizationId: string,
+    companyId: string,
   ): Promise<TimeEntryResponse> {
-    const timeEntry = await this.prisma.time_entry.findFirst({
-      where: {
-        id,
-        user_id: userId,
-        user: {
-          organization_id: organizationId,
-        },
-      },
+    const timeEntry = await this.prisma.timeEntry.findFirst({
+      where: { id, userId, companyId },
       include: {
-        user: true,
-        project: true,
-        organization: true,
-        time_entry_type: true,
+        user: {
+          select: { id: true, name: true, email: true },
+        },
+        project: {
+          select: { id: true, name: true, code: true },
+        },
       },
     });
 
@@ -310,25 +241,19 @@ export class TimeEntriesService {
   async create(
     createTimeEntryDto: CreateTimeEntryDto,
     userId: string,
-    organizationId: string,
+    companyId: string,
   ): Promise<TimeEntryResponse> {
-    return this.createEntry(createTimeEntryDto, userId, organizationId);
+    return this.createEntry(createTimeEntryDto, userId, companyId);
   }
 
   async updateMine(
     id: string,
     updateTimeEntryDto: UpdateTimeEntryDto,
     userId: string,
-    organizationId: string,
+    companyId: string,
   ): Promise<TimeEntryResponse> {
-    const existing = await this.prisma.time_entry.findFirst({
-      where: {
-        id,
-        user_id: userId,
-        user: {
-          organization_id: organizationId,
-        },
-      },
+    const existing = await this.prisma.timeEntry.findFirst({
+      where: { id, userId, companyId },
     });
 
     if (!existing) {
@@ -337,22 +262,16 @@ export class TimeEntriesService {
       );
     }
 
-    return this.updateEntry(id, updateTimeEntryDto, organizationId);
+    return this.updateEntry(id, updateTimeEntryDto, companyId);
   }
 
   async removeMine(
     id: string,
     userId: string,
-    organizationId: string,
+    companyId: string,
   ): Promise<DeletedTimeEntryResponse> {
-    const existing = await this.prisma.time_entry.findFirst({
-      where: {
-        id,
-        user_id: userId,
-        user: {
-          organization_id: organizationId,
-        },
-      },
+    const existing = await this.prisma.timeEntry.findFirst({
+      where: { id, userId, companyId },
     });
 
     if (!existing) {
@@ -361,7 +280,7 @@ export class TimeEntriesService {
       );
     }
 
-    const deleted = await this.prisma.time_entry.delete({
+    const deleted = await this.prisma.timeEntry.delete({
       where: { id },
     });
 
@@ -374,20 +293,17 @@ export class TimeEntriesService {
 
   async getActiveTimer(
     userId: string,
-    organizationId: string,
+    companyId: string,
   ): Promise<ActiveTimerResponse | null> {
-    const activeTimer = await this.prisma.active_timer.findFirst({
-      where: {
-        user_id: userId,
-        user: {
-          organization_id: organizationId,
-        },
-      },
+    const activeTimer = await this.prisma.activeTimer.findFirst({
+      where: { userId, companyId },
       include: {
-        user: true,
-        project: true,
-        organization: true,
-        time_entry_type: true,
+        user: {
+          select: { id: true, name: true, email: true },
+        },
+        project: {
+          select: { id: true, name: true, code: true },
+        },
       },
     });
 
@@ -401,11 +317,11 @@ export class TimeEntriesService {
   async startTimer(
     dto: StartTimerDto,
     userId: string,
-    organizationId: string,
+    companyId: string,
   ): Promise<ActiveTimerResponse> {
     // Check if user already has an active timer
-    const existingTimer = await this.prisma.active_timer.findUnique({
-      where: { user_id: userId },
+    const existingTimer = await this.prisma.activeTimer.findUnique({
+      where: { userId },
     });
 
     if (existingTimer) {
@@ -414,47 +330,37 @@ export class TimeEntriesService {
       );
     }
 
-    // Verify project belongs to organization
-    const project = await this.prisma.project.findFirst({
-      where: {
-        id: dto.projectId,
-        company: {
-          organization_id: organizationId,
-        },
-      },
-    });
+    // Verify project belongs to company if provided
+    if (dto.projectId) {
+      const project = await this.prisma.project.findFirst({
+        where: { id: dto.projectId, companyId },
+      });
 
-    if (!project) {
-      throw new NotFoundException(
-        `Proyecto con ID ${dto.projectId} no encontrado`,
-      );
+      if (!project) {
+        throw new NotFoundException(
+          `Proyecto con ID ${dto.projectId} no encontrado`,
+        );
+      }
     }
 
-    // Verify time entry type exists
-    const timeEntryType = await this.prisma.time_entry_type.findFirst({
-      where: { id: dto.typeId },
-    });
-
-    if (!timeEntryType) {
-      throw new NotFoundException(
-        `Tipo de registro con ID ${dto.typeId} no encontrado`,
-      );
-    }
-
-    const activeTimer = await this.prisma.active_timer.create({
+    const activeTimer = await this.prisma.activeTimer.create({
       data: {
-        user_id: userId,
-        project_id: dto.projectId,
-        organization_id: organizationId,
-        type_id: dto.typeId,
-        started_at: new Date(),
-        is_office: dto.isOffice ?? true,
+        userId,
+        companyId,
+        projectId: dto.projectId,
+        startTime: new Date(),
+        entryType: dto.entryType ?? 'WORK',
+        lat: dto.lat,
+        lng: dto.lng,
+        ipAddress: dto.ipAddress,
       },
       include: {
-        user: true,
-        project: true,
-        organization: true,
-        time_entry_type: true,
+        user: {
+          select: { id: true, name: true, email: true },
+        },
+        project: {
+          select: { id: true, name: true, code: true },
+        },
       },
     });
 
@@ -463,47 +369,51 @@ export class TimeEntriesService {
 
   async stopTimer(
     userId: string,
-    organizationId: string,
+    companyId: string,
+    endData?: { lat?: number; lng?: number; ipAddress?: string },
   ): Promise<TimeEntryResponse> {
-    const activeTimer = await this.prisma.active_timer.findFirst({
-      where: {
-        user_id: userId,
-        user: {
-          organization_id: organizationId,
-        },
-      },
+    const activeTimer = await this.prisma.activeTimer.findFirst({
+      where: { userId, companyId },
     });
 
     if (!activeTimer) {
       throw new NotFoundException('No tienes ningún temporizador activo');
     }
 
-    const endedAt = new Date();
-    const minutes = Math.round(
-      (endedAt.getTime() - activeTimer.started_at.getTime()) / 60000,
+    const endTime = new Date();
+    const durationMinutes = Math.round(
+      (endTime.getTime() - activeTimer.startTime.getTime()) / 60000,
     );
 
     // Use a transaction to ensure atomicity
     const [, timeEntry] = await this.prisma.$transaction([
-      this.prisma.active_timer.delete({
+      this.prisma.activeTimer.delete({
         where: { id: activeTimer.id },
       }),
-      this.prisma.time_entry.create({
+      this.prisma.timeEntry.create({
         data: {
-          user_id: activeTimer.user_id,
-          project_id: activeTimer.project_id,
-          organization_id: activeTimer.organization_id,
-          type_id: activeTimer.type_id,
-          started_at: activeTimer.started_at,
-          ended_at: endedAt,
-          minutes: minutes > 0 ? minutes : 1, // At least 1 minute
-          is_office: activeTimer.is_office,
+          userId: activeTimer.userId,
+          companyId: activeTimer.companyId,
+          projectId: activeTimer.projectId,
+          startTime: activeTimer.startTime,
+          endTime,
+          durationMinutes: durationMinutes > 0 ? durationMinutes : 1,
+          entryType: activeTimer.entryType,
+          source: 'WEB',
+          startLat: activeTimer.lat,
+          startLng: activeTimer.lng,
+          startIp: activeTimer.ipAddress,
+          endLat: endData?.lat,
+          endLng: endData?.lng,
+          endIp: endData?.ipAddress,
         },
         include: {
-          user: true,
-          project: true,
-          organization: true,
-          time_entry_type: true,
+          user: {
+            select: { id: true, name: true, email: true },
+          },
+          project: {
+            select: { id: true, name: true, code: true },
+          },
         },
       }),
     ]);
@@ -514,15 +424,10 @@ export class TimeEntriesService {
   async switchTimer(
     dto: SwitchTimerDto,
     userId: string,
-    organizationId: string,
+    companyId: string,
   ): Promise<SwitchTimerResponse> {
-    const activeTimer = await this.prisma.active_timer.findFirst({
-      where: {
-        user_id: userId,
-        user: {
-          organization_id: organizationId,
-        },
-      },
+    const activeTimer = await this.prisma.activeTimer.findFirst({
+      where: { userId, companyId },
     });
 
     if (!activeTimer) {
@@ -531,75 +436,64 @@ export class TimeEntriesService {
       );
     }
 
-    // Verify new project belongs to organization
-    const project = await this.prisma.project.findFirst({
-      where: {
-        id: dto.projectId,
-        company: {
-          organization_id: organizationId,
-        },
-      },
-    });
+    // Verify new project belongs to company if provided
+    if (dto.projectId) {
+      const project = await this.prisma.project.findFirst({
+        where: { id: dto.projectId, companyId },
+      });
 
-    if (!project) {
-      throw new NotFoundException(
-        `Proyecto con ID ${dto.projectId} no encontrado`,
-      );
-    }
-
-    // Verify time entry type exists
-    const timeEntryType = await this.prisma.time_entry_type.findFirst({
-      where: { id: dto.typeId },
-    });
-
-    if (!timeEntryType) {
-      throw new NotFoundException(
-        `Tipo de registro con ID ${dto.typeId} no encontrado`,
-      );
+      if (!project) {
+        throw new NotFoundException(
+          `Proyecto con ID ${dto.projectId} no encontrado`,
+        );
+      }
     }
 
     const switchTime = new Date();
-    const minutes = Math.round(
-      (switchTime.getTime() - activeTimer.started_at.getTime()) / 60000,
+    const durationMinutes = Math.round(
+      (switchTime.getTime() - activeTimer.startTime.getTime()) / 60000,
     );
 
     // Use a transaction: delete old timer, create time entry, create new timer
     const [, timeEntry, newActiveTimer] = await this.prisma.$transaction([
-      this.prisma.active_timer.delete({
+      this.prisma.activeTimer.delete({
         where: { id: activeTimer.id },
       }),
-      this.prisma.time_entry.create({
+      this.prisma.timeEntry.create({
         data: {
-          user_id: activeTimer.user_id,
-          project_id: activeTimer.project_id,
-          organization_id: activeTimer.organization_id,
-          type_id: activeTimer.type_id,
-          started_at: activeTimer.started_at,
-          ended_at: switchTime,
-          minutes: minutes > 0 ? minutes : 1,
-          is_office: activeTimer.is_office,
+          userId: activeTimer.userId,
+          companyId: activeTimer.companyId,
+          projectId: activeTimer.projectId,
+          startTime: activeTimer.startTime,
+          endTime: switchTime,
+          durationMinutes: durationMinutes > 0 ? durationMinutes : 1,
+          entryType: activeTimer.entryType,
+          source: 'WEB',
         },
         include: {
-          user: true,
-          project: true,
-          organization: true,
-          time_entry_type: true,
+          user: {
+            select: { id: true, name: true, email: true },
+          },
+          project: {
+            select: { id: true, name: true, code: true },
+          },
         },
       }),
-      this.prisma.active_timer.create({
+      this.prisma.activeTimer.create({
         data: {
-          user_id: userId,
-          project_id: dto.projectId,
-          organization_id: organizationId,
-          type_id: dto.typeId,
-          started_at: switchTime,
-          is_office: dto.isOffice ?? true,
+          userId,
+          companyId,
+          projectId: dto.projectId,
+          startTime: switchTime,
+          entryType: dto.entryType ?? 'WORK',
         },
         include: {
-          user: true,
-          project: true,
-          organization: true,
-          time_entry_type: true,
+          user: {
+            select: { id: true, name: true, email: true },
+          },
+          project: {
+            select: { id: true, name: true, code: true },
+          },
         },
       }),
     ]);
@@ -612,20 +506,17 @@ export class TimeEntriesService {
 
   async cancelTimer(
     userId: string,
-    organizationId: string,
+    companyId: string,
   ): Promise<ActiveTimerResponse> {
-    const activeTimer = await this.prisma.active_timer.findFirst({
-      where: {
-        user_id: userId,
-        user: {
-          organization_id: organizationId,
-        },
-      },
+    const activeTimer = await this.prisma.activeTimer.findFirst({
+      where: { userId, companyId },
       include: {
-        user: true,
-        project: true,
-        organization: true,
-        time_entry_type: true,
+        user: {
+          select: { id: true, name: true, email: true },
+        },
+        project: {
+          select: { id: true, name: true, code: true },
+        },
       },
     });
 
@@ -633,7 +524,7 @@ export class TimeEntriesService {
       throw new NotFoundException('No tienes ningún temporizador activo');
     }
 
-    await this.prisma.active_timer.delete({
+    await this.prisma.activeTimer.delete({
       where: { id: activeTimer.id },
     });
 
@@ -647,53 +538,46 @@ export class TimeEntriesService {
   private async createEntry(
     dto: CreateTimeEntryDto | AdminCreateTimeEntryDto,
     userId: string,
-    organizationId: string,
+    companyId: string,
   ): Promise<TimeEntryResponse> {
-    // Verify that the project belongs to a company in the organization
-    const project = await this.prisma.project.findFirst({
-      where: {
-        id: dto.projectId,
-        company: {
-          organization_id: organizationId,
-        },
-      },
-    });
+    // Verify project belongs to company if provided
+    if (dto.projectId) {
+      const project = await this.prisma.project.findFirst({
+        where: { id: dto.projectId, companyId },
+      });
 
-    if (!project) {
-      throw new NotFoundException(
-        `Proyecto con ID ${dto.projectId} no encontrado`,
-      );
+      if (!project) {
+        throw new NotFoundException(
+          `Proyecto con ID ${dto.projectId} no encontrado`,
+        );
+      }
     }
 
-    // Verify the time entry type exists
-    const timeEntryType = await this.prisma.time_entry_type.findFirst({
-      where: {
-        id: dto.typeId,
-      },
-    });
+    const startTime = new Date(dto.startTime);
+    const endTime = new Date(dto.endTime);
+    const durationMinutes =
+      dto.durationMinutes ??
+      Math.round((endTime.getTime() - startTime.getTime()) / 60000);
 
-    if (!timeEntryType) {
-      throw new NotFoundException(
-        `Tipo de registro con ID ${dto.typeId} no encontrado`,
-      );
-    }
-
-    const timeEntry = await this.prisma.time_entry.create({
+    const timeEntry = await this.prisma.timeEntry.create({
       data: {
-        user_id: userId,
-        project_id: dto.projectId,
-        organization_id: organizationId,
-        type_id: dto.typeId,
-        started_at: new Date(dto.startedAt),
-        ended_at: new Date(dto.endedAt),
-        minutes: dto.minutes,
-        is_office: dto.isOffice ?? true,
+        userId,
+        companyId,
+        projectId: dto.projectId,
+        startTime,
+        endTime,
+        durationMinutes: durationMinutes > 0 ? durationMinutes : 1,
+        entryType: dto.entryType ?? 'WORK',
+        source: dto.source ?? 'WEB',
+        isManual: true,
       },
       include: {
-        user: true,
-        project: true,
-        organization: true,
-        time_entry_type: true,
+        user: {
+          select: { id: true, name: true, email: true },
+        },
+        project: {
+          select: { id: true, name: true, code: true },
+        },
       },
     });
 
@@ -703,17 +587,12 @@ export class TimeEntriesService {
   private async updateEntry(
     id: string,
     updateTimeEntryDto: UpdateTimeEntryDto,
-    organizationId: string,
+    companyId: string,
   ): Promise<TimeEntryResponse> {
-    // If updating projectId, verify it belongs to the organization
+    // If updating projectId, verify it belongs to the company
     if (updateTimeEntryDto.projectId) {
       const project = await this.prisma.project.findFirst({
-        where: {
-          id: updateTimeEntryDto.projectId,
-          company: {
-            organization_id: organizationId,
-          },
-        },
+        where: { id: updateTimeEntryDto.projectId, companyId },
       });
 
       if (!project) {
@@ -723,40 +602,27 @@ export class TimeEntriesService {
       }
     }
 
-    // If updating typeId, verify it exists
-    if (updateTimeEntryDto.typeId) {
-      const timeEntryType = await this.prisma.time_entry_type.findFirst({
-        where: {
-          id: updateTimeEntryDto.typeId,
-        },
-      });
-
-      if (!timeEntryType) {
-        throw new NotFoundException(
-          `Tipo de registro con ID ${updateTimeEntryDto.typeId} no encontrado`,
-        );
-      }
-    }
-
-    const timeEntry = await this.prisma.time_entry.update({
+    const timeEntry = await this.prisma.timeEntry.update({
       where: { id },
       data: {
-        project_id: updateTimeEntryDto.projectId,
-        type_id: updateTimeEntryDto.typeId,
-        started_at: updateTimeEntryDto.startedAt
-          ? new Date(updateTimeEntryDto.startedAt)
+        projectId: updateTimeEntryDto.projectId,
+        entryType: updateTimeEntryDto.entryType,
+        startTime: updateTimeEntryDto.startTime
+          ? new Date(updateTimeEntryDto.startTime)
           : undefined,
-        ended_at: updateTimeEntryDto.endedAt
-          ? new Date(updateTimeEntryDto.endedAt)
+        endTime: updateTimeEntryDto.endTime
+          ? new Date(updateTimeEntryDto.endTime)
           : undefined,
-        minutes: updateTimeEntryDto.minutes,
-        is_office: updateTimeEntryDto.isOffice,
+        durationMinutes: updateTimeEntryDto.durationMinutes,
+        isModified: true,
       },
       include: {
-        user: true,
-        project: true,
-        organization: true,
-        time_entry_type: true,
+        user: {
+          select: { id: true, name: true, email: true },
+        },
+        project: {
+          select: { id: true, name: true, code: true },
+        },
       },
     });
 
@@ -764,113 +630,60 @@ export class TimeEntriesService {
   }
 
   private toTimeEntryResponse(
-    timeEntry: time_entry & {
+    timeEntry: TimeEntry & {
       user?: { id: string; name: string; email: string };
-      project?: { id: string; name: string; code: string };
-      organization?: { id: string; name: string };
-      time_entry_type?: { id: string; name: string };
+      project?: { id: string; name: string; code: string | null } | null;
     },
   ): TimeEntryResponse {
     return {
       id: timeEntry.id,
-      userId: timeEntry.user_id,
-      projectId: timeEntry.project_id,
-      organizationId: timeEntry.organization_id,
-      typeId: timeEntry.type_id,
-      startedAt: timeEntry.started_at,
-      endedAt: timeEntry.ended_at,
-      minutes: timeEntry.minutes,
-      isOffice: timeEntry.is_office,
-      createdAt: timeEntry.created_at,
-      user: timeEntry.user
-        ? {
-            id: timeEntry.user.id,
-            name: timeEntry.user.name,
-            email: timeEntry.user.email,
-          }
-        : undefined,
-      project: timeEntry.project
-        ? {
-            id: timeEntry.project.id,
-            name: timeEntry.project.name,
-            code: timeEntry.project.code,
-          }
-        : undefined,
-      organization: timeEntry.organization
-        ? {
-            id: timeEntry.organization.id,
-            name: timeEntry.organization.name,
-          }
-        : undefined,
-      timeEntryType: timeEntry.time_entry_type
-        ? {
-            id: timeEntry.time_entry_type.id,
-            name: timeEntry.time_entry_type.name,
-          }
-        : undefined,
+      userId: timeEntry.userId,
+      projectId: timeEntry.projectId,
+      companyId: timeEntry.companyId,
+      startTime: timeEntry.startTime,
+      endTime: timeEntry.endTime,
+      durationMinutes: timeEntry.durationMinutes,
+      entryType: timeEntry.entryType,
+      source: timeEntry.source,
+      isManual: timeEntry.isManual,
+      isModified: timeEntry.isModified,
+      createdAt: timeEntry.createdAt,
+      user: timeEntry.user,
+      project: timeEntry.project,
     };
   }
 
   private toDeletedTimeEntryResponse(
-    timeEntry: time_entry,
+    timeEntry: TimeEntry,
   ): DeletedTimeEntryResponse {
     return {
       id: timeEntry.id,
-      userId: timeEntry.user_id,
-      projectId: timeEntry.project_id,
-      organizationId: timeEntry.organization_id,
-      typeId: timeEntry.type_id,
-      startedAt: timeEntry.started_at,
-      endedAt: timeEntry.ended_at,
-      minutes: timeEntry.minutes,
-      isOffice: timeEntry.is_office,
-      createdAt: timeEntry.created_at,
+      userId: timeEntry.userId,
+      projectId: timeEntry.projectId,
+      companyId: timeEntry.companyId,
+      startTime: timeEntry.startTime,
+      endTime: timeEntry.endTime,
+      durationMinutes: timeEntry.durationMinutes,
+      entryType: timeEntry.entryType,
+      createdAt: timeEntry.createdAt,
     };
   }
 
   private toActiveTimerResponse(
-    activeTimer: active_timer & {
+    activeTimer: ActiveTimer & {
       user?: { id: string; name: string; email: string };
-      project?: { id: string; name: string; code: string };
-      organization?: { id: string; name: string };
-      time_entry_type?: { id: string; name: string };
+      project?: { id: string; name: string; code: string | null } | null;
     },
   ): ActiveTimerResponse {
     return {
       id: activeTimer.id,
-      userId: activeTimer.user_id,
-      projectId: activeTimer.project_id,
-      organizationId: activeTimer.organization_id,
-      typeId: activeTimer.type_id,
-      startedAt: activeTimer.started_at,
-      isOffice: activeTimer.is_office,
-      createdAt: activeTimer.created_at,
-      user: activeTimer.user
-        ? {
-            id: activeTimer.user.id,
-            name: activeTimer.user.name,
-            email: activeTimer.user.email,
-          }
-        : undefined,
-      project: activeTimer.project
-        ? {
-            id: activeTimer.project.id,
-            name: activeTimer.project.name,
-            code: activeTimer.project.code,
-          }
-        : undefined,
-      organization: activeTimer.organization
-        ? {
-            id: activeTimer.organization.id,
-            name: activeTimer.organization.name,
-          }
-        : undefined,
-      timeEntryType: activeTimer.time_entry_type
-        ? {
-            id: activeTimer.time_entry_type.id,
-            name: activeTimer.time_entry_type.name,
-          }
-        : undefined,
+      userId: activeTimer.userId,
+      projectId: activeTimer.projectId,
+      companyId: activeTimer.companyId,
+      startTime: activeTimer.startTime,
+      entryType: activeTimer.entryType,
+      user: activeTimer.user,
+      project: activeTimer.project,
     };
   }
 }

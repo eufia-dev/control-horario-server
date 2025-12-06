@@ -10,4 +10,3 @@ export interface WorkerBreakdownItem {
 export interface ProjectBreakdownResponse {
   workers: WorkerBreakdownItem[];
 }
-

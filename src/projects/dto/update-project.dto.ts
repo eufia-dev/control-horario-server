@@ -1,18 +1,26 @@
-import { IsBoolean, IsNotEmpty, IsString, IsUUID } from 'class-validator';
+import {
+  IsBoolean,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
 
 export class UpdateProjectDto {
   @IsString()
   @IsNotEmpty()
-  name: string;
+  @IsOptional()
+  name?: string;
 
   @IsString()
-  @IsNotEmpty()
-  code: string;
-
-  @IsUUID()
-  @IsNotEmpty()
-  companyId: string;
+  @IsOptional()
+  code?: string;
 
   @IsBoolean()
-  isActive: boolean;
+  @IsOptional()
+  isActive?: boolean;
+
+  @IsUUID()
+  @IsOptional()
+  categoryId?: string;
 }

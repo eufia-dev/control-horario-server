@@ -1,28 +1,46 @@
 import {
   IsBoolean,
   IsEmail,
+  IsEnum,
   IsNotEmpty,
   IsNumber,
+  IsOptional,
   IsString,
   Min,
 } from 'class-validator';
 
+export enum UserRole {
+  OWNER = 'OWNER',
+  ADMIN = 'ADMIN',
+  WORKER = 'WORKER',
+  AUDITOR = 'AUDITOR',
+}
+
 export class UpdateUserDto {
   @IsString()
   @IsNotEmpty()
-  name: string;
+  @IsOptional()
+  name?: string;
 
   @IsEmail()
   @IsNotEmpty()
-  email: string;
+  @IsOptional()
+  email?: string;
+
+  @IsString()
+  @IsOptional()
+  phone?: string;
 
   @IsNumber()
   @Min(0)
-  hourlyCost: number;
+  @IsOptional()
+  hourlyCost?: number;
 
   @IsBoolean()
-  isActive: boolean;
+  @IsOptional()
+  isActive?: boolean;
 
-  @IsBoolean()
-  isAdmin: boolean;
+  @IsEnum(UserRole)
+  @IsOptional()
+  role?: UserRole;
 }

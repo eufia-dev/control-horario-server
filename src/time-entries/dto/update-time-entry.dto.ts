@@ -1,35 +1,32 @@
 import {
-  IsBoolean,
   IsDateString,
+  IsEnum,
   IsInt,
   IsOptional,
   IsPositive,
   IsUUID,
 } from 'class-validator';
+import { EntryType } from './create-time-entry.dto.js';
 
 export class UpdateTimeEntryDto {
   @IsUUID()
   @IsOptional()
   projectId?: string;
 
-  @IsUUID()
+  @IsEnum(EntryType)
   @IsOptional()
-  typeId?: string;
+  entryType?: EntryType;
 
   @IsDateString()
   @IsOptional()
-  startedAt?: string;
+  startTime?: string;
 
   @IsDateString()
   @IsOptional()
-  endedAt?: string;
+  endTime?: string;
 
   @IsInt()
   @IsPositive()
   @IsOptional()
-  minutes?: number;
-
-  @IsBoolean()
-  @IsOptional()
-  isOffice?: boolean;
+  durationMinutes?: number;
 }

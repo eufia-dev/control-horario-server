@@ -35,7 +35,7 @@ export class AnalyticsController {
   getProjectsSummary(
     @Req() req: RequestWithUser,
   ): Promise<ProjectsSummaryResponse> {
-    return this.analyticsService.getProjectsSummary(req.user.organizationId);
+    return this.analyticsService.getProjectsSummary(req.user.companyId);
   }
 
   /**
@@ -49,7 +49,7 @@ export class AnalyticsController {
   ): Promise<ProjectBreakdownResponse> {
     return this.analyticsService.getProjectBreakdown(
       projectId,
-      req.user.organizationId,
+      req.user.companyId,
     );
   }
 
@@ -61,7 +61,7 @@ export class AnalyticsController {
   getWorkersSummary(
     @Req() req: RequestWithUser,
   ): Promise<WorkersSummaryResponse> {
-    return this.analyticsService.getWorkersSummary(req.user.organizationId);
+    return this.analyticsService.getWorkersSummary(req.user.companyId);
   }
 
   /**
@@ -78,7 +78,7 @@ export class AnalyticsController {
     return this.analyticsService.getWorkerBreakdown(
       workerId,
       query.type,
-      req.user.organizationId,
+      req.user.companyId,
     );
   }
 }

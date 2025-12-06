@@ -11,4 +11,3 @@ import { AnalyticsService } from './analytics.service.js';
   exports: [AnalyticsService],
 })
 export class AnalyticsModule {}
-

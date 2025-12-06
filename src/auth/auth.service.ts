@@ -1,192 +1,158 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { JwtPayload } from './interfaces/jwt-payload.interface.js';
-import { type user } from '../../generated/prisma/client.js';
+import { SupabaseService } from '../supabase/supabase.service.js';
+import type { UserRole } from '@prisma/client';
 
 export interface AuthUser {
   id: string;
+  authId: string;
   name: string;
   email: string;
-  organizationId: string;
-  organizationName: string;
-  mustChangePassword: boolean;
-  isAdmin: boolean;
+  companyId: string;
+  companyName: string;
+  role: UserRole;
   isActive: boolean;
   createdAt: Date;
 }
 
-export interface AuthResult {
-  accessToken: string;
-  refreshToken: string;
-  user: AuthUser;
+export interface SupabaseUser {
+  id: string;
+  email: string;
 }
 
-export interface RefreshResult {
-  accessToken: string;
-  user: AuthUser;
+/**
+ * Custom error for users who need to complete onboarding
+ */
+export class OnboardingRequiredError extends UnauthorizedException {
+  constructor(
+    public readonly authId: string,
+    public readonly email: string,
+  ) {
+    super({
+      statusCode: 401,
+      error: 'ONBOARDING_REQUIRED',
+      message: 'Usuario requiere completar el proceso de registro',
+    });
+  }
 }
-
-// Token expiration times
-const ACCESS_TOKEN_EXPIRES_IN = '15m'; // 15 minutes
-const REFRESH_TOKEN_EXPIRES_IN = '7d'; // 7 days
 
 @Injectable()
 export class AuthService {
-  private readonly bcryptRounds = 12;
-
   constructor(
     private readonly prisma: PrismaService,
-    private readonly jwtService: JwtService,
+    private readonly supabase: SupabaseService,
   ) {}
 
-  async login(email: string, password: string): Promise<AuthResult> {
-    const user = await this.prisma.user.findFirst({
-      where: { email },
-      include: {
-        organization: true,
-      },
-    });
+  /**
+   * Validates a Supabase access token and returns the Supabase user info
+   * Does not require an app user to exist
+   */
+  async validateSupabaseToken(accessToken: string): Promise<SupabaseUser> {
+    const {
+      data: { user: supabaseUser },
+      error,
+    } = await this.supabase.getAdminClient().auth.getUser(accessToken);
 
-    if (!user || !user.is_active) {
-      throw new UnauthorizedException('Credenciales inválidas');
+    if (error || !supabaseUser) {
+      console.error('Error validating token:', error);
+      throw new UnauthorizedException('Token inválido o expirado');
     }
 
-    const passwordValid = await bcrypt.compare(password, user.password_hash);
-    if (!passwordValid) {
-      throw new UnauthorizedException('Credenciales inválidas');
+    if (!supabaseUser.email) {
+      throw new UnauthorizedException('Usuario sin email verificado');
     }
-
-    const { accessToken, refreshToken } = await this.generateTokens(user);
 
     return {
-      accessToken,
-      refreshToken,
-      user: this.toAuthUser(user),
+      id: supabaseUser.id,
+      email: supabaseUser.email,
     };
   }
 
-  async resetPassword(
-    userId: string,
-    currentPassword: string,
-    newPassword: string,
-  ): Promise<AuthResult> {
+  /**
+   * Validates a Supabase access token and returns the associated app user
+   * Throws OnboardingRequiredError if user doesn't have an app account yet
+   */
+  async validateToken(accessToken: string): Promise<AuthUser> {
+    const supabaseUser = await this.validateSupabaseToken(accessToken);
+
+    // Fetch app user by authId (Supabase UID)
+    const appUser = await this.prisma.user.findFirst({
+      where: { authId: supabaseUser.id },
+      include: { company: true },
+    });
+
+    if (!appUser) {
+      throw new OnboardingRequiredError(supabaseUser.id, supabaseUser.email);
+    }
+
+    if (!appUser.isActive) {
+      throw new UnauthorizedException('Usuario desactivado');
+    }
+
+    return this.toAuthUser(appUser);
+  }
+
+  /**
+   * Get user profile by user ID
+   */
+  async getProfile(userId: string): Promise<AuthUser> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: {
-        organization: true,
-      },
+      include: { company: true },
     });
 
-    if (!user || !user.is_active) {
-      throw new UnauthorizedException('Usuario inválido');
+    if (!user) {
+      throw new UnauthorizedException('Usuario no encontrado');
     }
 
-    const matches = await bcrypt.compare(currentPassword, user.password_hash);
+    return this.toAuthUser(user);
+  }
 
-    if (!matches) {
-      throw new UnauthorizedException('La contraseña actual es incorrecta');
-    }
+  /**
+   * Check if a user with this authId already exists
+   */
+  async userExists(authId: string): Promise<boolean> {
+    const user = await this.prisma.user.findFirst({
+      where: { authId },
+    });
+    return !!user;
+  }
 
-    const newHash = await bcrypt.hash(newPassword, this.bcryptRounds);
-
-    const updated = await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        password_hash: newHash,
-        must_change_password: false,
+  /**
+   * Get pending invitations for an email
+   */
+  getPendingInvitations(email: string) {
+    return this.prisma.companyInvitation.findMany({
+      where: {
+        email: email.toLowerCase(),
+        usedAt: null,
+        expiresAt: { gt: new Date() },
       },
-      include: {
-        organization: true,
-      },
+      include: { company: true },
     });
-
-    const { accessToken, refreshToken } = await this.generateTokens(updated);
-
-    return {
-      accessToken,
-      refreshToken,
-      user: this.toAuthUser(updated),
-    };
   }
 
-  async refreshAccessToken(refreshTokenValue: string): Promise<RefreshResult> {
-    try {
-      const payload = await this.jwtService.verifyAsync<JwtPayload>(
-        refreshTokenValue,
-        { secret: process.env.JWT_REFRESH_SECRET ?? 'dev-refresh-secret' },
-      );
-
-      const user = await this.prisma.user.findUnique({
-        where: { id: payload.sub },
-        include: {
-          organization: true,
-        },
-      });
-
-      if (!user || !user.is_active) {
-        throw new UnauthorizedException('Usuario inválido');
-      }
-
-      const accessToken = await this.jwtService.signAsync(
-        {
-          sub: user.id,
-          email: user.email,
-          organizationId: user.organization_id,
-          mustChangePassword: user.must_change_password ?? false,
-          isAdmin: Boolean(user.is_admin),
-        } as JwtPayload,
-        { expiresIn: ACCESS_TOKEN_EXPIRES_IN },
-      );
-
-      return {
-        accessToken,
-        user: this.toAuthUser(user),
-      };
-    } catch {
-      throw new UnauthorizedException('Token de refresco inválido o expirado');
-    }
-  }
-
-  private async generateTokens(
-    user: user,
-  ): Promise<{ accessToken: string; refreshToken: string }> {
-    const payload: JwtPayload = {
-      sub: user.id,
-      email: user.email,
-      organizationId: user.organization_id,
-      mustChangePassword: user.must_change_password ?? false,
-      isAdmin: Boolean(user.is_admin),
-    };
-
-    // Access token (short-lived)
-    const accessToken = await this.jwtService.signAsync(payload, {
-      expiresIn: ACCESS_TOKEN_EXPIRES_IN,
-    });
-
-    // Refresh token (long-lived, different secret)
-    const refreshToken = await this.jwtService.signAsync(payload, {
-      secret: process.env.JWT_REFRESH_SECRET ?? 'dev-refresh-secret',
-      expiresIn: REFRESH_TOKEN_EXPIRES_IN,
-    });
-
-    return { accessToken, refreshToken };
-  }
-
-  private toAuthUser(
-    user: user & { organization?: { name: string } },
-  ): AuthUser {
+  private toAuthUser(user: {
+    id: string;
+    authId: string;
+    name: string;
+    email: string;
+    companyId: string;
+    role: UserRole;
+    isActive: boolean;
+    createdAt: Date;
+    company?: { name: string } | null;
+  }): AuthUser {
     return {
       id: user.id,
+      authId: user.authId,
       name: user.name,
       email: user.email,
-      organizationId: user.organization_id,
-      organizationName: user.organization?.name ?? '',
-      mustChangePassword: user.must_change_password ?? false,
-      isAdmin: Boolean(user.is_admin),
-      isActive: user.is_active,
-      createdAt: user.created_at,
+      companyId: user.companyId,
+      companyName: user.company?.name ?? '',
+      role: user.role,
+      isActive: user.isActive,
+      createdAt: user.createdAt,
     };
   }
 }

@@ -1,15 +1,30 @@
-import { IsBoolean, IsNotEmpty, IsOptional, IsUUID } from 'class-validator';
+import {
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
+import { EntryType } from './create-time-entry.dto.js';
 
 export class StartTimerDto {
   @IsUUID()
-  @IsNotEmpty()
-  projectId: string;
-
-  @IsUUID()
-  @IsNotEmpty()
-  typeId: string;
-
-  @IsBoolean()
   @IsOptional()
-  isOffice?: boolean;
+  projectId?: string;
+
+  @IsEnum(EntryType)
+  @IsOptional()
+  entryType?: EntryType;
+
+  @IsNumber()
+  @IsOptional()
+  lat?: number;
+
+  @IsNumber()
+  @IsOptional()
+  lng?: number;
+
+  @IsString()
+  @IsOptional()
+  ipAddress?: string;
 }

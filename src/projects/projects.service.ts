@@ -2,22 +2,22 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateProjectDto } from './dto/create-project.dto.js';
 import { UpdateProjectDto } from './dto/update-project.dto.js';
-import { type project } from '../../generated/prisma/client.js';
+import type { Project } from '@prisma/client';
 
 export interface ProjectResponse {
   id: string;
   name: string;
-  code: string;
+  code: string | null;
   isActive: boolean;
-  createdAt: Date;
   companyId: string;
-  companyName: string;
+  categoryId: string | null;
+  createdAt: Date;
 }
 
 export interface DeletedProjectResponse {
   id: string;
   name: string;
-  code: string;
+  code: string | null;
   isActive: boolean;
   createdAt: Date;
 }
@@ -26,45 +26,18 @@ export interface DeletedProjectResponse {
 export class ProjectsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(organizationId: string): Promise<ProjectResponse[]> {
+  async findAll(companyId: string): Promise<ProjectResponse[]> {
     const projects = await this.prisma.project.findMany({
-      where: {
-        company: {
-          organization_id: organizationId,
-        },
-      },
-      include: {
-        company: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
-      orderBy: {
-        created_at: 'desc',
-      },
+      where: { companyId },
+      orderBy: { createdAt: 'desc' },
     });
 
     return projects.map((project) => this.toProjectResponse(project));
   }
 
-  async findOne(id: string, organizationId: string): Promise<ProjectResponse> {
+  async findOne(id: string, companyId: string): Promise<ProjectResponse> {
     const project = await this.prisma.project.findFirst({
-      where: {
-        id,
-        company: {
-          organization_id: organizationId,
-        },
-      },
-      include: {
-        company: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
+      where: { id, companyId },
     });
 
     if (!project) {
@@ -76,35 +49,14 @@ export class ProjectsService {
 
   async create(
     createProjectDto: CreateProjectDto,
-    organizationId: string,
+    companyId: string,
   ): Promise<ProjectResponse> {
-    // Verify the company belongs to the user's organization
-    const company = await this.prisma.company.findFirst({
-      where: {
-        id: createProjectDto.companyId,
-        organization_id: organizationId,
-      },
-    });
-
-    if (!company) {
-      throw new NotFoundException(
-        `Empresa con ID ${createProjectDto.companyId} no encontrada`,
-      );
-    }
-
     const project = await this.prisma.project.create({
       data: {
         name: createProjectDto.name,
         code: createProjectDto.code,
-        company_id: createProjectDto.companyId,
-      },
-      include: {
-        company: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
+        companyId,
+        categoryId: createProjectDto.categoryId,
       },
     });
 
@@ -114,35 +66,15 @@ export class ProjectsService {
   async update(
     id: string,
     updateProjectDto: UpdateProjectDto,
-    organizationId: string,
+    companyId: string,
   ): Promise<ProjectResponse> {
-    // Verify the project belongs to the user's organization
+    // Verify the project belongs to the company
     const existing = await this.prisma.project.findFirst({
-      where: {
-        id,
-        company: {
-          organization_id: organizationId,
-        },
-      },
+      where: { id, companyId },
     });
+
     if (!existing) {
       throw new NotFoundException(`Proyecto con ID ${id} no encontrado`);
-    }
-
-    // If changing company, verify the new company belongs to the same organization
-    if (updateProjectDto.companyId) {
-      const company = await this.prisma.company.findFirst({
-        where: {
-          id: updateProjectDto.companyId,
-          organization_id: organizationId,
-        },
-      });
-
-      if (!company) {
-        throw new NotFoundException(
-          `Empresa con ID ${updateProjectDto.companyId} no encontrada`,
-        );
-      }
     }
 
     const project = await this.prisma.project.update({
@@ -150,34 +82,19 @@ export class ProjectsService {
       data: {
         name: updateProjectDto.name,
         code: updateProjectDto.code,
-        company_id: updateProjectDto.companyId,
-        is_active: updateProjectDto.isActive,
-      },
-      include: {
-        company: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
+        isActive: updateProjectDto.isActive,
+        categoryId: updateProjectDto.categoryId,
       },
     });
 
     return this.toProjectResponse(project);
   }
 
-  async remove(
-    id: string,
-    organizationId: string,
-  ): Promise<DeletedProjectResponse> {
+  async remove(id: string, companyId: string): Promise<DeletedProjectResponse> {
     const existing = await this.prisma.project.findFirst({
-      where: {
-        id,
-        company: {
-          organization_id: organizationId,
-        },
-      },
+      where: { id, companyId },
     });
+
     if (!existing) {
       throw new NotFoundException(`Proyecto con ID ${id} no encontrado`);
     }
@@ -189,27 +106,25 @@ export class ProjectsService {
     return this.toDeletedProjectResponse(deleted);
   }
 
-  private toProjectResponse(
-    project: project & { company: { id: string; name: string } },
-  ): ProjectResponse {
+  private toProjectResponse(project: Project): ProjectResponse {
     return {
       id: project.id,
       name: project.name,
       code: project.code,
-      isActive: project.is_active,
-      createdAt: project.created_at,
-      companyId: project.company.id,
-      companyName: project.company.name,
+      isActive: project.isActive,
+      companyId: project.companyId,
+      categoryId: project.categoryId,
+      createdAt: project.createdAt,
     };
   }
 
-  private toDeletedProjectResponse(project: project): DeletedProjectResponse {
+  private toDeletedProjectResponse(project: Project): DeletedProjectResponse {
     return {
       id: project.id,
       name: project.name,
       code: project.code,
-      isActive: project.is_active,
-      createdAt: project.created_at,
+      isActive: project.isActive,
+      createdAt: project.createdAt,
     };
   }
 }

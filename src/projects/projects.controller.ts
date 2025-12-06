@@ -31,7 +31,7 @@ export class ProjectsController {
 
   @Get()
   findAll(@Req() req: RequestWithUser): Promise<ProjectResponse[]> {
-    return this.projectsService.findAll(req.user.organizationId);
+    return this.projectsService.findAll(req.user.companyId);
   }
 
   @Get(':id')
@@ -39,7 +39,7 @@ export class ProjectsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithUser,
   ): Promise<ProjectResponse> {
-    return this.projectsService.findOne(id, req.user.organizationId);
+    return this.projectsService.findOne(id, req.user.companyId);
   }
 
   @Post()
@@ -48,10 +48,7 @@ export class ProjectsController {
     @Body() createProjectDto: CreateProjectDto,
     @Req() req: RequestWithUser,
   ): Promise<ProjectResponse> {
-    return this.projectsService.create(
-      createProjectDto,
-      req.user.organizationId,
-    );
+    return this.projectsService.create(createProjectDto, req.user.companyId);
   }
 
   @Patch(':id')
@@ -64,7 +61,7 @@ export class ProjectsController {
     return this.projectsService.update(
       id,
       updateProjectDto,
-      req.user.organizationId,
+      req.user.companyId,
     );
   }
 
@@ -74,6 +71,6 @@ export class ProjectsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithUser,
   ): Promise<DeletedProjectResponse> {
-    return this.projectsService.remove(id, req.user.organizationId);
+    return this.projectsService.remove(id, req.user.companyId);
   }
 }

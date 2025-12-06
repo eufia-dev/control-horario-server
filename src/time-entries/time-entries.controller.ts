@@ -25,7 +25,6 @@ import {
   TimeEntryResponse,
   ActiveTimerResponse,
   SwitchTimerResponse,
-  TimeEntryTypeResponse,
   TimeEntriesService,
 } from './time-entries.service.js';
 
@@ -45,7 +44,7 @@ export class TimeEntriesController {
   findMyEntries(@Req() req: RequestWithUser): Promise<TimeEntryResponse[]> {
     return this.timeEntriesService.findMyEntries(
       req.user.sub,
-      req.user.organizationId,
+      req.user.companyId,
     );
   }
 
@@ -57,7 +56,7 @@ export class TimeEntriesController {
     return this.timeEntriesService.create(
       createTimeEntryDto,
       req.user.sub,
-      req.user.organizationId,
+      req.user.companyId,
     );
   }
 
@@ -67,7 +66,7 @@ export class TimeEntriesController {
   ): Promise<ActiveTimerResponse | null> {
     return this.timeEntriesService.getActiveTimer(
       req.user.sub,
-      req.user.organizationId,
+      req.user.companyId,
     );
   }
 
@@ -79,7 +78,7 @@ export class TimeEntriesController {
     return this.timeEntriesService.findMyOne(
       id,
       req.user.sub,
-      req.user.organizationId,
+      req.user.companyId,
     );
   }
 
@@ -93,7 +92,7 @@ export class TimeEntriesController {
       id,
       updateTimeEntryDto,
       req.user.sub,
-      req.user.organizationId,
+      req.user.companyId,
     );
   }
 
@@ -105,7 +104,7 @@ export class TimeEntriesController {
     return this.timeEntriesService.removeMine(
       id,
       req.user.sub,
-      req.user.organizationId,
+      req.user.companyId,
     );
   }
 
@@ -122,16 +121,13 @@ export class TimeEntriesController {
     return this.timeEntriesService.startTimer(
       dto,
       req.user.sub,
-      req.user.organizationId,
+      req.user.companyId,
     );
   }
 
   @Post('me/timer/stop')
   stopTimer(@Req() req: RequestWithUser): Promise<TimeEntryResponse> {
-    return this.timeEntriesService.stopTimer(
-      req.user.sub,
-      req.user.organizationId,
-    );
+    return this.timeEntriesService.stopTimer(req.user.sub, req.user.companyId);
   }
 
   @Post('me/timer/switch')
@@ -142,7 +138,7 @@ export class TimeEntriesController {
     return this.timeEntriesService.switchTimer(
       dto,
       req.user.sub,
-      req.user.organizationId,
+      req.user.companyId,
     );
   }
 
@@ -150,18 +146,8 @@ export class TimeEntriesController {
   cancelTimer(@Req() req: RequestWithUser): Promise<ActiveTimerResponse> {
     return this.timeEntriesService.cancelTimer(
       req.user.sub,
-      req.user.organizationId,
+      req.user.companyId,
     );
-  }
-
-  // ============================================
-  // TIME ENTRY TYPES (/time-entries/types)
-  // Available to all authenticated users
-  // ============================================
-
-  @Get('types')
-  findAllTypes(): Promise<TimeEntryTypeResponse[]> {
-    return this.timeEntriesService.findAllTypes();
   }
 
   // ============================================
@@ -175,7 +161,7 @@ export class TimeEntriesController {
     @Req() req: RequestWithUser,
     @Query('userId') userId?: string,
   ): Promise<TimeEntryResponse[]> {
-    return this.timeEntriesService.findAll(req.user.organizationId, userId);
+    return this.timeEntriesService.findAll(req.user.companyId, userId);
   }
 
   @Post()
@@ -184,7 +170,7 @@ export class TimeEntriesController {
     @Body() dto: AdminCreateTimeEntryDto,
     @Req() req: RequestWithUser,
   ): Promise<TimeEntryResponse> {
-    return this.timeEntriesService.adminCreate(dto, req.user.organizationId);
+    return this.timeEntriesService.adminCreate(dto, req.user.companyId);
   }
 
   @Get(':id')
@@ -193,7 +179,7 @@ export class TimeEntriesController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithUser,
   ): Promise<TimeEntryResponse> {
-    return this.timeEntriesService.findOne(id, req.user.organizationId);
+    return this.timeEntriesService.findOne(id, req.user.companyId);
   }
 
   @Patch(':id')
@@ -206,7 +192,7 @@ export class TimeEntriesController {
     return this.timeEntriesService.update(
       id,
       updateTimeEntryDto,
-      req.user.organizationId,
+      req.user.companyId,
     );
   }
 
@@ -216,6 +202,6 @@ export class TimeEntriesController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithUser,
   ): Promise<DeletedTimeEntryResponse> {
-    return this.timeEntriesService.remove(id, req.user.organizationId);
+    return this.timeEntriesService.remove(id, req.user.companyId);
   }
 }

@@ -1,33 +1,74 @@
 import {
   Controller,
+  Delete,
   Get,
   Param,
-  ParseUUIDPipe,
+  Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { AdminGuard } from '../auth/admin.guard.js';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
-import { CompanyResponse, CompaniesService } from './companies.service.js';
+import {
+  CompanyResponse,
+  CompanyPublicResponse,
+  CompaniesService,
+} from './companies.service.js';
 
 type RequestWithUser = Request & { user: JwtPayload };
 
 @Controller('companies')
-@UseGuards(JwtAuthGuard)
 export class CompaniesController {
   constructor(private readonly companiesService: CompaniesService) {}
 
-  @Get()
-  findAll(@Req() req: RequestWithUser): Promise<CompanyResponse[]> {
-    return this.companiesService.findAll(req.user.organizationId);
+  /**
+   * Search companies by name (public endpoint for onboarding)
+   */
+  @Get('search')
+  search(@Query('q') query: string): Promise<CompanyPublicResponse[]> {
+    return this.companiesService.search(query);
   }
 
-  @Get(':id')
-  findOne(
-    @Param('id', ParseUUIDPipe) id: string,
+  /**
+   * Find company by invite code (public endpoint for onboarding)
+   */
+  @Get('by-code/:code')
+  findByCode(@Param('code') code: string): Promise<CompanyPublicResponse> {
+    return this.companiesService.findByInviteCode(code);
+  }
+
+  /**
+   * Get the current user's company
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  findMyCompany(@Req() req: RequestWithUser): Promise<CompanyResponse> {
+    return this.companiesService.findOne(req.user.companyId);
+  }
+
+  /**
+   * Generate or regenerate invite code for the company
+   */
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @Post('generate-invite-code')
+  generateInviteCode(
     @Req() req: RequestWithUser,
-  ): Promise<CompanyResponse> {
-    return this.companiesService.findOne(id, req.user.organizationId);
+  ): Promise<{ inviteCode: string }> {
+    return this.companiesService.generateInviteCode(req.user.companyId);
+  }
+
+  /**
+   * Remove invite code (disable public joining)
+   */
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @Delete('invite-code')
+  async removeInviteCode(
+    @Req() req: RequestWithUser,
+  ): Promise<{ success: boolean }> {
+    await this.companiesService.removeInviteCode(req.user.companyId);
+    return { success: true };
   }
 }

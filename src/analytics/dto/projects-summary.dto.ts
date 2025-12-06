@@ -13,4 +13,3 @@ export interface ProjectSummaryItem {
 export interface ProjectsSummaryResponse {
   projects: ProjectSummaryItem[];
 }
-

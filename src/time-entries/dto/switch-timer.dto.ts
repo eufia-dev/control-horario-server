@@ -1,15 +1,12 @@
-import { IsBoolean, IsNotEmpty, IsOptional, IsUUID } from 'class-validator';
+import { IsEnum, IsOptional, IsUUID } from 'class-validator';
+import { EntryType } from './create-time-entry.dto.js';
 
 export class SwitchTimerDto {
   @IsUUID()
-  @IsNotEmpty()
-  projectId: string;
-
-  @IsUUID()
-  @IsNotEmpty()
-  typeId: string;
-
-  @IsBoolean()
   @IsOptional()
-  isOffice?: boolean;
+  projectId?: string;
+
+  @IsEnum(EntryType)
+  @IsOptional()
+  entryType?: EntryType;
 }

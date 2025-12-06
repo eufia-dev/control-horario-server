@@ -1,7 +1,9 @@
+import type { UserRole } from '@prisma/client';
+
 export interface JwtPayload {
-  sub: string;
+  sub: string; // User ID (from users table)
+  authId: string; // Supabase Auth UID
   email: string;
-  organizationId: string;
-  mustChangePassword: boolean;
-  isAdmin: boolean;
+  companyId: string; // Company ID
+  role: UserRole; // OWNER | ADMIN | WORKER | AUDITOR
 }

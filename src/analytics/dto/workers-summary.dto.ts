@@ -10,4 +10,3 @@ export interface WorkerSummaryItem {
 export interface WorkersSummaryResponse {
   workers: WorkerSummaryItem[];
 }
-

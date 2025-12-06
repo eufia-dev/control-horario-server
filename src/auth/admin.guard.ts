@@ -5,7 +5,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { JwtPayload } from './interfaces/jwt-payload.interface.js';
+import type { JwtPayload } from './interfaces/jwt-payload.interface.js';
 
 interface RequestWithUser extends Request {
   user: JwtPayload;
@@ -15,9 +15,14 @@ interface RequestWithUser extends Request {
 export class AdminGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest<RequestWithUser>();
-    if (!req.user?.isAdmin) {
+
+    // Allow OWNER and ADMIN roles
+    const allowedRoles = ['OWNER', 'ADMIN'];
+
+    if (!req.user?.role || !allowedRoles.includes(req.user.role)) {
       throw new ForbiddenException('Acceso restringido a administradores');
     }
+
     return true;
   }
 }
