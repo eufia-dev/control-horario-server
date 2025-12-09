@@ -91,4 +91,31 @@ export class EmailService {
       );
     }
   }
+
+  async sendEmail(
+    subject: string,
+    text: string,
+    html: string,
+    to?: string,
+  ): Promise<void> {
+    const from = process.env.SMTP_USER ?? '';
+    const toAddress = to ?? process.env.SMTP_USER ?? '';
+    const transporter = this.getTransporter();
+
+    try {
+      await transporter.sendMail({
+        from,
+        to: toAddress,
+        subject,
+        text,
+        html,
+      });
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : JSON.stringify(error);
+      throw new InternalServerErrorException(
+        `No se pudo enviar el correo. Detalle: ${message}`,
+      );
+    }
+  }
 }

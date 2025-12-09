@@ -13,6 +13,7 @@ import { AnalyticsModule } from './analytics/analytics.module.js';
 import { OnboardingModule } from './onboarding/onboarding.module.js';
 import { InvitationsModule } from './invitations/invitations.module.js';
 import { JoinRequestsModule } from './join-requests/join-requests.module.js';
+import { SupportModule } from './support/support.module.js';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { JoinRequestsModule } from './join-requests/join-requests.module.js';
     OnboardingModule,
     InvitationsModule,
     JoinRequestsModule,
+    SupportModule,
   ],
   controllers: [AppController],
   providers: [AppService],
