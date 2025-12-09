@@ -9,11 +9,11 @@ import { AdminCreateTimeEntryDto } from './dto/admin-create-time-entry.dto.js';
 import { UpdateTimeEntryDto } from './dto/update-time-entry.dto.js';
 import { StartTimerDto } from './dto/start-timer.dto.js';
 import { SwitchTimerDto } from './dto/switch-timer.dto.js';
-import type {
-  TimeEntry,
-  ActiveTimer,
+import {
   EntryType,
-  EntrySource,
+  type TimeEntry,
+  type ActiveTimer,
+  type EntrySource,
 } from '@prisma/client';
 
 export interface TimeEntryResponse {
@@ -77,9 +77,32 @@ export interface SwitchTimerResponse {
   activeTimer: ActiveTimerResponse;
 }
 
+export interface EnumOption {
+  value: string;
+  name: string;
+}
+
 @Injectable()
 export class TimeEntriesService {
   constructor(private readonly prisma: PrismaService) {}
+
+  // ============================================
+  // TYPES (enum values for frontend)
+  // ============================================
+
+  getTypes(): EnumOption[] {
+    const entryTypeNames: Record<EntryType, string> = {
+      [EntryType.WORK]: 'Trabajo',
+      [EntryType.PAUSE_COFFEE]: 'Pausa café',
+      [EntryType.PAUSE_LUNCH]: 'Pausa comida',
+      [EntryType.PAUSE_PERSONAL]: 'Pausa personal',
+    };
+
+    return Object.values(EntryType).map((value) => ({
+      value,
+      name: entryTypeNames[value],
+    }));
+  }
 
   // ============================================
   // ADMIN METHODS (no ownership checks needed)

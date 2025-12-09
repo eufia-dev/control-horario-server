@@ -26,6 +26,7 @@ import {
   ActiveTimerResponse,
   SwitchTimerResponse,
   TimeEntriesService,
+  type EnumOption,
 } from './time-entries.service.js';
 
 type RequestWithUser = Request & { user: JwtPayload };
@@ -34,6 +35,15 @@ type RequestWithUser = Request & { user: JwtPayload };
 @UseGuards(JwtAuthGuard)
 export class TimeEntriesController {
   constructor(private readonly timeEntriesService: TimeEntriesService) {}
+
+  // ============================================
+  // TYPES (enum values for frontend)
+  // ============================================
+
+  @Get('types')
+  getTypes(): EnumOption[] {
+    return this.timeEntriesService.getTypes();
+  }
 
   // ============================================
   // USER ROUTES (/time-entries/me/*)
