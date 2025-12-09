@@ -4,4 +4,8 @@ export class ApproveRequestDto {
   @IsEnum(['ADMIN', 'WORKER', 'AUDITOR'])
   @IsOptional()
   role?: 'ADMIN' | 'WORKER' | 'AUDITOR' = 'WORKER';
+
+  @IsEnum(['EMPLOYEE', 'CONTRACTOR', 'GUEST'])
+  @IsOptional()
+  relationType?: 'EMPLOYEE' | 'CONTRACTOR' | 'GUEST' = 'EMPLOYEE';
 }

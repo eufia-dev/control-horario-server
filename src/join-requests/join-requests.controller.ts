@@ -15,8 +15,9 @@ import { AdminGuard } from '../auth/admin.guard.js';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
 import {
   JoinRequestsService,
-  JoinRequestResponse,
-  JoinRequestWithUser,
+  type JoinRequestResponse,
+  type JoinRequestWithUser,
+  type ApproveOptionsResponse,
 } from './join-requests.service.js';
 import { ApproveRequestDto } from './dto/index.js';
 import type { JoinRequestStatus } from '@prisma/client';
@@ -28,10 +29,11 @@ type RequestWithUser = Request & { user: JwtPayload };
 export class JoinRequestsController {
   constructor(private readonly joinRequestsService: JoinRequestsService) {}
 
-  /**
-   * List all join requests for the company
-   * Optionally filter by status
-   */
+  @Get('options')
+  getOptions(): ApproveOptionsResponse {
+    return this.joinRequestsService.getOptions();
+  }
+
   @Get()
   async findAll(
     @Req() req: RequestWithUser,
@@ -40,9 +42,6 @@ export class JoinRequestsController {
     return this.joinRequestsService.findAll(req.user.companyId, status);
   }
 
-  /**
-   * Get pending requests count for badge/notification
-   */
   @Get('pending-count')
   async getPendingCount(
     @Req() req: RequestWithUser,
@@ -53,9 +52,6 @@ export class JoinRequestsController {
     return { count };
   }
 
-  /**
-   * Get a specific join request
-   */
   @Get(':id')
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
@@ -64,9 +60,6 @@ export class JoinRequestsController {
     return this.joinRequestsService.findOne(id, req.user.companyId);
   }
 
-  /**
-   * Approve a join request
-   */
   @Post(':id/approve')
   async approve(
     @Param('id', ParseUUIDPipe) id: string,
@@ -81,9 +74,6 @@ export class JoinRequestsController {
     );
   }
 
-  /**
-   * Reject a join request
-   */
   @Post(':id/reject')
   async reject(
     @Param('id', ParseUUIDPipe) id: string,

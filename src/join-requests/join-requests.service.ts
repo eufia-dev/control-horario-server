@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ApproveRequestDto } from './dto/index.js';
-import type { JoinRequestStatus, UserRole } from '@prisma/client';
+import { JoinRequestStatus, UserRole, RelationType } from '@prisma/client';
 
 export interface JoinRequestResponse {
   id: string;
@@ -22,7 +22,18 @@ export interface JoinRequestWithUser extends JoinRequestResponse {
     name: string;
     email: string;
     role: UserRole;
+    relationType: RelationType;
   };
+}
+
+export interface EnumOption {
+  value: string;
+  name: string;
+}
+
+export interface ApproveOptionsResponse {
+  relationTypes: EnumOption[];
+  roles: EnumOption[];
 }
 
 @Injectable()
@@ -105,6 +116,7 @@ export class JoinRequestsService {
           name: request.name,
           companyId,
           role: dto.role || 'WORKER',
+          relationType: dto.relationType || 'EMPLOYEE',
           hourlyCost: 0,
         },
       });
@@ -141,6 +153,7 @@ export class JoinRequestsService {
         name: result.user.name,
         email: result.user.email,
         role: result.user.role,
+        relationType: result.user.relationType,
       },
     };
   }
@@ -175,6 +188,33 @@ export class JoinRequestsService {
     });
 
     return this.toResponse(updated);
+  }
+
+  getOptions(): ApproveOptionsResponse {
+    const relationTypeNames: Record<RelationType, string> = {
+      [RelationType.EMPLOYEE]: 'Empleado',
+      [RelationType.CONTRACTOR]: 'Autónomo',
+      [RelationType.GUEST]: 'Invitado',
+    };
+
+    const roleNames: Record<string, string> = {
+      [UserRole.ADMIN]: 'Administrador',
+      [UserRole.WORKER]: 'Trabajador',
+      [UserRole.AUDITOR]: 'Auditor',
+    };
+
+    const availableRoles = [UserRole.ADMIN, UserRole.WORKER, UserRole.AUDITOR];
+
+    return {
+      relationTypes: Object.values(RelationType).map((value) => ({
+        value,
+        name: relationTypeNames[value],
+      })),
+      roles: availableRoles.map((value) => ({
+        value,
+        name: roleNames[value],
+      })),
+    };
   }
 
   private toResponse(request: {
