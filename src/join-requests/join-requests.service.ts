@@ -119,6 +119,18 @@ export class JoinRequestsService {
         },
       });
 
+      // NEW: Mark any pending invitations for this email/company as used
+      await tx.companyInvitation.updateMany({
+        where: {
+          email: request.email.toLowerCase(),
+          companyId,
+          usedAt: null,
+        },
+        data: {
+          usedAt: new Date(),
+        },
+      });
+
       return { request: updatedRequest, user };
     });
 

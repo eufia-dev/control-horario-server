@@ -186,7 +186,6 @@ export class OnboardingService {
     token: string,
     userName: string,
   ): Promise<OnboardingStatus> {
-    // Check if user already exists
     const existingUser = await this.prisma.user.findFirst({
       where: { authId },
     });
@@ -195,7 +194,6 @@ export class OnboardingService {
       throw new ConflictException('El usuario ya tiene una cuenta');
     }
 
-    // Find the invitation
     const invitation = await this.prisma.companyInvitation.findUnique({
       where: { token },
       include: { company: true },
@@ -234,6 +232,19 @@ export class OnboardingService {
       await tx.companyInvitation.update({
         where: { id: invitation.id },
         data: { usedAt: new Date() },
+      });
+
+      // NEW: Cancel any pending join requests from this user to this company
+      await tx.joinRequest.updateMany({
+        where: {
+          authId,
+          companyId: invitation.companyId,
+          status: 'PENDING',
+        },
+        data: {
+          status: 'APPROVED', // Or you could add a new status like 'CANCELLED' or 'RESOLVED_VIA_INVITATION'
+          reviewedAt: new Date(),
+        },
       });
 
       return { user, company: invitation.company };

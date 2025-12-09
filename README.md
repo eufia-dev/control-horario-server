@@ -31,6 +31,15 @@
 $ pnpm install
 ```
 
+## Environment
+
+- `DATABASE_URL`: PostgreSQL connection string.
+- `SUPABASE_URL`, `SUPABASE_SECRET_KEY`: Supabase admin credentials.
+- `FRONTEND_ORIGIN`: Allowed CORS origin and fallback base for invite links.
+- `INVITE_BASE_URL`: Base URL used to build invite links (`/invite/{token}`); falls back to `FRONTEND_ORIGIN` if not set.
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`: SMTP settings for transactional emails.
+- `SMTP_SECURE`: Optional, set to `true` for TLS (defaults to `false`).
+
 ## Compile and run the project
 
 ```bash

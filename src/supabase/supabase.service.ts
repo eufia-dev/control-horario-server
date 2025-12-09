@@ -1,17 +1,21 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 @Injectable()
 export class SupabaseService {
-  private adminClient: SupabaseClient;
+  private readonly logger = new Logger(SupabaseService.name);
+  private adminClient: SupabaseClient<any, 'public', any, any, any>;
 
   constructor() {
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
 
     if (!supabaseUrl || !supabaseSecretKey) {
-      throw new Error(
-        'Missing SUPABASE_URL or SUPABASE_SECRET_KEY environment variables',
+      this.logger.error(
+        'Faltan las variables de entorno SUPABASE_URL o SUPABASE_SECRET_KEY.',
+      );
+      throw new InternalServerErrorException(
+        'Falta la configuración de Supabase en el servidor. Contacta con soporte.',
       );
     }
 
@@ -23,7 +27,7 @@ export class SupabaseService {
     });
   }
 
-  getAdminClient(): SupabaseClient {
+  getAdminClient(): SupabaseClient<any, 'public', any, any, any> {
     return this.adminClient;
   }
 }

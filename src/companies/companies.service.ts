@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { Company, BillingPlan } from '@prisma/client';
 import { randomBytes } from 'crypto';
@@ -100,7 +104,9 @@ export class CompaniesService {
     } while (attempts < maxAttempts);
 
     if (attempts >= maxAttempts) {
-      throw new Error('No se pudo generar un código único');
+      throw new InternalServerErrorException(
+        'No se pudo generar un código único para la empresa. Inténtalo de nuevo más tarde.',
+      );
     }
 
     await this.prisma.company.update({
