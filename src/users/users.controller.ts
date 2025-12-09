@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -42,5 +45,14 @@ export class UsersController {
     @Req() req: RequestWithUser,
   ): Promise<UserResponse> {
     return this.usersService.update(id, updateUserDto, req.user.companyId);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  delete(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: RequestWithUser,
+  ): Promise<void> {
+    return this.usersService.delete(id, req.user.companyId);
   }
 }

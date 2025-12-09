@@ -7,13 +7,24 @@ import {
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateInvitationDto } from './dto/index.js';
 import { randomBytes } from 'crypto';
-import type { UserRole } from '@prisma/client';
+import { UserRole, RelationType } from '@prisma/client';
 import { EmailService } from '../email/email.service.js';
+
+export interface EnumOption {
+  value: string;
+  name: string;
+}
+
+export interface InvitationOptionsResponse {
+  relationTypes: EnumOption[];
+  roles: EnumOption[];
+}
 
 export interface InvitationResponse {
   id: string;
   email: string;
   role: UserRole;
+  relationType: RelationType;
   token: string;
   expiresAt: Date;
   usedAt: Date | null;
@@ -75,6 +86,7 @@ export class InvitationsService {
           companyId,
           email,
           role: dto.role || 'WORKER',
+          relationType: dto.relationType || 'EMPLOYEE',
           token,
           expiresAt,
         },
@@ -137,9 +149,6 @@ export class InvitationsService {
     });
   }
 
-  /**
-   * Resend an invitation (regenerate token and extend expiry)
-   */
   async resend(id: string, companyId: string): Promise<InvitationResponse> {
     const updated = await this.prisma.$transaction(async (tx) => {
       const invitation = await tx.companyInvitation.findFirst({
@@ -216,6 +225,33 @@ export class InvitationsService {
     });
   }
 
+  getOptions(): InvitationOptionsResponse {
+    const relationTypeNames: Record<RelationType, string> = {
+      [RelationType.EMPLOYEE]: 'Empleado',
+      [RelationType.CONTRACTOR]: 'Autónomo',
+      [RelationType.GUEST]: 'Invitado',
+    };
+
+    const roleNames: Record<string, string> = {
+      [UserRole.ADMIN]: 'Administrador',
+      [UserRole.WORKER]: 'Trabajador',
+      [UserRole.AUDITOR]: 'Auditor',
+    };
+
+    const availableRoles = [UserRole.ADMIN, UserRole.WORKER, UserRole.AUDITOR];
+
+    return {
+      relationTypes: Object.values(RelationType).map((value) => ({
+        value,
+        name: relationTypeNames[value],
+      })),
+      roles: availableRoles.map((value) => ({
+        value,
+        name: roleNames[value],
+      })),
+    };
+  }
+
   private generateToken(): string {
     return randomBytes(32).toString('hex');
   }
@@ -224,6 +260,7 @@ export class InvitationsService {
     id: string;
     email: string;
     role: UserRole;
+    relationType: RelationType;
     token: string;
     expiresAt: Date;
     usedAt: Date | null;
@@ -233,6 +270,7 @@ export class InvitationsService {
       id: invitation.id,
       email: invitation.email,
       role: invitation.role,
+      relationType: invitation.relationType,
       token: invitation.token,
       expiresAt: invitation.expiresAt,
       usedAt: invitation.usedAt,

@@ -1,4 +1,8 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 @Injectable()
@@ -19,15 +23,32 @@ export class SupabaseService {
       );
     }
 
-    this.adminClient = createClient(supabaseUrl, supabaseSecretKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
+    this.adminClient = createClient<any, 'public', any>(
+      supabaseUrl,
+      supabaseSecretKey,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
       },
-    });
+    );
   }
 
   getAdminClient(): SupabaseClient<any, 'public', any, any, any> {
     return this.adminClient;
+  }
+
+  async deleteUser(authId: string): Promise<void> {
+    const { error } = await this.adminClient.auth.admin.deleteUser(authId);
+
+    if (error) {
+      this.logger.error(
+        `Error al eliminar usuario de Supabase: ${error.message}`,
+      );
+      throw new InternalServerErrorException(
+        'Error al eliminar el usuario de autenticación',
+      );
+    }
   }
 }

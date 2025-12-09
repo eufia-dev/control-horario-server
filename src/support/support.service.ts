@@ -25,9 +25,6 @@ export class SupportService {
       throw new NotFoundException('Usuario no encontrado');
     }
 
-    const userName = user.name;
-    const userEmail = user.email;
-
     const severityUpper =
       bugReport.severity.charAt(0).toUpperCase() + bugReport.severity.slice(1);
     const categoryUpper =
@@ -38,8 +35,8 @@ export class SupportService {
       'Nuevo reporte de error recibido',
       '',
       '--- Información del Usuario ---',
-      `Nombre: ${userName}`,
-      `Email: ${userEmail}`,
+      `Nombre: ${user.name}`,
+      `Email: ${user.email}`,
       `ID de Usuario: ${userPayload.sub}`,
       `ID de Compañía: ${userPayload.companyId}`,
       `Rol: ${userPayload.role}`,
@@ -69,8 +66,8 @@ export class SupportService {
       
       <h3>Información del Usuario</h3>
       <ul>
-        <li><strong>Nombre:</strong> ${this.escapeHtml(userName)}</li>
-        <li><strong>Email:</strong> ${this.escapeHtml(userEmail)}</li>
+        <li><strong>Nombre:</strong> ${this.escapeHtml(user.name)}</li>
+        <li><strong>Email:</strong> ${this.escapeHtml(user.email)}</li>
         <li><strong>ID de Usuario:</strong> ${this.escapeHtml(userPayload.sub)}</li>
         <li><strong>ID de Compañía:</strong> ${this.escapeHtml(userPayload.companyId)}</li>
         <li><strong>Rol:</strong> ${this.escapeHtml(userPayload.role)}</li>
@@ -115,17 +112,14 @@ export class SupportService {
       throw new NotFoundException('Usuario no encontrado');
     }
 
-    const userName = user.name;
-    const userEmail = user.email;
-
     const subject = `[Support Request] ${contactMessage.subject}`;
 
     const text = [
       'Nuevo mensaje de soporte recibido',
       '',
       '--- Información del Usuario ---',
-      `Nombre: ${userName}`,
-      `Email: ${userEmail}`,
+      `Nombre: ${user.name}`,
+      `Email: ${user.email}`,
       `ID de Usuario: ${userPayload.sub}`,
       `ID de Compañía: ${userPayload.companyId}`,
       `Rol: ${userPayload.role}`,
@@ -142,8 +136,8 @@ export class SupportService {
       
       <h3>Información del Usuario</h3>
       <ul>
-        <li><strong>Nombre:</strong> ${this.escapeHtml(userName)}</li>
-        <li><strong>Email:</strong> ${this.escapeHtml(userEmail)}</li>
+        <li><strong>Nombre:</strong> ${this.escapeHtml(user.name)}</li>
+        <li><strong>Email:</strong> ${this.escapeHtml(user.email)}</li>
         <li><strong>ID de Usuario:</strong> ${this.escapeHtml(userPayload.sub)}</li>
         <li><strong>ID de Compañía:</strong> ${this.escapeHtml(userPayload.companyId)}</li>
         <li><strong>Rol:</strong> ${this.escapeHtml(userPayload.role)}</li>

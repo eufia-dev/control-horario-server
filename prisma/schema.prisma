@@ -13,7 +13,7 @@ datasource db {
 model Company {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name      String   @db.VarChar(255)
-  cif       String?  @unique @db.VarChar(50) // Tax ID
+  cif       String?  @unique @db.VarChar(50)
   logoUrl   String?  @map("logo_url")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -33,7 +33,7 @@ model Company {
   invitations       CompanyInvitation[]
   joinRequests      JoinRequest[]
 
-  @@map("companies") // Table name is now 'companies'
+  @@map("companies")
 }
 
 enum BillingPlan {
@@ -46,10 +46,7 @@ enum BillingPlan {
 // ---------------------------------------------------------
 model User {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-
-  // Renamed to companyId
   companyId String @map("company_id") @db.Uuid
-
   authId String @map("auth_id") @db.Uuid
 
   email     String  @db.VarChar(320)
@@ -70,7 +67,6 @@ model User {
   workSchedules        WorkSchedule[]
   notificationSettings NotificationSettings?
 
-  // Relation renamed to 'company'
   company Company @relation(fields: [companyId], references: [id])
 
   timeEntries TimeEntry[]
@@ -86,17 +82,17 @@ model User {
   @@map("users")
 }
 
+enum RelationType {
+  EMPLOYEE
+  CONTRACTOR
+  GUEST
+}
+
 enum UserRole {
   OWNER
   ADMIN
   WORKER
   AUDITOR
-}
-
-enum RelationType {
-  EMPLOYEE
-  CONTRACTOR
-  GUEST
 }
 
 // ---------------------------------------------------------
@@ -336,14 +332,15 @@ model ExternalHours {
 // 8. COMPANY INVITATIONS & JOIN REQUESTS
 // ---------------------------------------------------------
 model CompanyInvitation {
-  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  companyId String    @map("company_id") @db.Uuid
-  email     String    @db.VarChar(320)
-  role      UserRole  @default(WORKER)
-  token     String    @unique @db.VarChar(64)
-  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
-  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId    String       @map("company_id") @db.Uuid
+  email        String       @db.VarChar(320)
+  role         UserRole     @default(WORKER)
+  relationType RelationType @default(EMPLOYEE) @map("relation_type")
+  token        String       @unique @db.VarChar(64)
+  expiresAt    DateTime     @map("expires_at") @db.Timestamptz(6)
+  usedAt       DateTime?    @map("used_at") @db.Timestamptz(6)
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
 
   company Company @relation(fields: [companyId], references: [id])
 

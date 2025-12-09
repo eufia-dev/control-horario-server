@@ -19,13 +19,11 @@ export enum UserRole {
 export class UpdateUserDto {
   @IsString()
   @IsNotEmpty()
-  @IsOptional()
-  name?: string;
+  name: string;
 
   @IsEmail()
   @IsNotEmpty()
-  @IsOptional()
-  email?: string;
+  email: string;
 
   @IsString()
   @IsOptional()
@@ -38,9 +36,9 @@ export class UpdateUserDto {
 
   @IsBoolean()
   @IsOptional()
-  isActive?: boolean;
+  isActive: boolean;
 
   @IsEnum(UserRole)
   @IsOptional()
-  role?: UserRole;
+  role: UserRole;
 }

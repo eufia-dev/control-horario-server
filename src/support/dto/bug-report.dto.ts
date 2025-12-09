@@ -1,35 +1,29 @@
-import {
-  IsNotEmpty,
-  IsString,
-  IsOptional,
-  IsIn,
-} from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsIn } from 'class-validator';
 
 export class BugReportDto {
   @IsString()
   @IsNotEmpty()
-  page: string; // URL/view where bug occurred
+  page: string;
 
   @IsString()
   @IsNotEmpty()
-  occurredAt: string; // ISO timestamp
+  occurredAt: string;
 
   @IsString()
   @IsNotEmpty()
   @IsIn(['ui', 'functionality', 'performance', 'data', 'other'])
-  category: string; // 'ui', 'functionality', 'performance', 'data', 'other'
+  category: string;
 
   @IsString()
   @IsNotEmpty()
   @IsIn(['low', 'medium', 'high', 'critical'])
-  severity: string; // 'low', 'medium', 'high', 'critical'
+  severity: string;
 
   @IsString()
   @IsNotEmpty()
-  description: string; // Detailed description
+  description: string;
 
   @IsString()
   @IsOptional()
-  stepsToReproduce?: string; // Optional steps to reproduce
+  stepsToReproduce?: string;
 }
-
