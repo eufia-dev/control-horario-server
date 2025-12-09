@@ -91,8 +91,12 @@ export class UsersService {
     updateUserDto: UpdateUserDto,
     companyId: string,
   ): Promise<UserResponse> {
+    let existing: User | null = null;
+    let emailChanged = false;
+    let supabaseEmailUpdated = false;
+
     try {
-      const existing = await this.prisma.user.findFirst({
+      existing = await this.prisma.user.findFirst({
         where: {
           id,
           companyId,
@@ -103,7 +107,10 @@ export class UsersService {
         throw new NotFoundException(`Usuario con ID ${id} no encontrado`);
       }
 
-      if (updateUserDto.email && updateUserDto.email !== existing.email) {
+      emailChanged =
+        Boolean(updateUserDto.email) && updateUserDto.email !== existing.email;
+
+      if (emailChanged) {
         const emailExists = await this.prisma.user.findFirst({
           where: {
             email: updateUserDto.email,
@@ -117,6 +124,13 @@ export class UsersService {
             `El email ${updateUserDto.email} ya está en uso`,
           );
         }
+      }
+
+      if (emailChanged) {
+        await this.supabaseService.updateUser(existing.authId, {
+          email: updateUserDto.email,
+        });
+        supabaseEmailUpdated = true;
       }
 
       const user = await this.prisma.user.update({
@@ -135,6 +149,21 @@ export class UsersService {
 
       return this.toUserResponse(user);
     } catch (error) {
+      if (emailChanged && supabaseEmailUpdated && existing) {
+        try {
+          await this.supabaseService.updateUser(existing.authId, {
+            email: existing.email,
+          });
+        } catch (rollbackError) {
+          this.logger.error(
+            `Error al revertir email en Supabase para el usuario ${id}`,
+            rollbackError instanceof Error
+              ? rollbackError.stack
+              : rollbackError,
+          );
+        }
+      }
+
       if (
         error instanceof NotFoundException ||
         error instanceof ConflictException

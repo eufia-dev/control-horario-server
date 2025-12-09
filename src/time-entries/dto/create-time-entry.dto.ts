@@ -6,6 +6,7 @@ import {
   IsNumber,
   IsOptional,
   IsPositive,
+  IsBoolean,
   IsString,
   IsUUID,
 } from 'class-validator';
@@ -35,6 +36,10 @@ export class CreateTimeEntryDto {
   @IsEnum(EntrySource)
   @IsOptional()
   source?: EntrySource;
+
+  @IsBoolean()
+  @IsOptional()
+  isInOffice?: boolean;
 
   @IsDateString()
   @IsNotEmpty()

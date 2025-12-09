@@ -3,6 +3,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsBoolean,
   IsUUID,
 } from 'class-validator';
 import { EntryType } from './create-time-entry.dto.js';
@@ -15,6 +16,10 @@ export class StartTimerDto {
   @IsEnum(EntryType)
   @IsOptional()
   entryType?: EntryType;
+
+  @IsBoolean()
+  @IsOptional()
+  isInOffice?: boolean;
 
   @IsNumber()
   @IsOptional()

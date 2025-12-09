@@ -39,6 +39,29 @@ export class SupabaseService {
     return this.adminClient;
   }
 
+  async updateUser(
+    authId: string,
+    params: {
+      email?: string;
+      password?: string;
+      user_metadata?: Record<string, unknown>;
+    },
+  ): Promise<void> {
+    const { error } = await this.adminClient.auth.admin.updateUserById(
+      authId,
+      params,
+    );
+
+    if (error) {
+      this.logger.error(
+        `Error al actualizar usuario de Supabase: ${error.message}`,
+      );
+      throw new InternalServerErrorException(
+        'Error al actualizar el usuario de autenticación',
+      );
+    }
+  }
+
   async deleteUser(authId: string): Promise<void> {
     const { error } = await this.adminClient.auth.admin.deleteUser(authId);
 

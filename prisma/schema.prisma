@@ -212,6 +212,7 @@ model ActiveTimer {
 
   startTime DateTime  @map("start_time") @db.Timestamptz(6)
   entryType EntryType @default(WORK) @map("entry_type")
+  isInOffice Boolean  @default(false) @map("is_in_office")
 
   lat       Float?
   lng       Float?
@@ -236,6 +237,7 @@ model TimeEntry {
 
   entryType EntryType   @default(WORK) @map("entry_type")
   source    EntrySource @default(WEB)
+  isInOffice Boolean    @default(false) @map("is_in_office")
 
   startLat Float?  @map("start_lat")
   startLng Float?  @map("start_lng")

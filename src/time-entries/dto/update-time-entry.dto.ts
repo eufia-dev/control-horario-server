@@ -4,6 +4,7 @@ import {
   IsInt,
   IsOptional,
   IsPositive,
+  IsBoolean,
   IsUUID,
 } from 'class-validator';
 import { EntryType } from './create-time-entry.dto.js';
@@ -29,4 +30,8 @@ export class UpdateTimeEntryDto {
   @IsPositive()
   @IsOptional()
   durationMinutes?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  isInOffice?: boolean;
 }

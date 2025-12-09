@@ -26,6 +26,7 @@ export interface TimeEntryResponse {
   durationMinutes: number;
   entryType: EntryType;
   source: EntrySource;
+  isInOffice: boolean;
   isManual: boolean;
   isModified: boolean;
   createdAt: Date;
@@ -50,6 +51,7 @@ export interface DeletedTimeEntryResponse {
   endTime: Date;
   durationMinutes: number;
   entryType: EntryType;
+  isInOffice: boolean;
   createdAt: Date;
 }
 
@@ -60,6 +62,7 @@ export interface ActiveTimerResponse {
   companyId: string;
   startTime: Date;
   entryType: EntryType;
+  isInOffice: boolean;
   user?: {
     id: string;
     name: string;
@@ -373,6 +376,7 @@ export class TimeEntriesService {
         projectId: dto.projectId,
         startTime: new Date(),
         entryType: dto.entryType ?? 'WORK',
+        isInOffice: dto.isInOffice ?? false,
         lat: dto.lat,
         lng: dto.lng,
         ipAddress: dto.ipAddress,
@@ -423,6 +427,7 @@ export class TimeEntriesService {
           durationMinutes: durationMinutes > 0 ? durationMinutes : 1,
           entryType: activeTimer.entryType,
           source: 'WEB',
+          isInOffice: activeTimer.isInOffice,
           startLat: activeTimer.lat,
           startLng: activeTimer.lng,
           startIp: activeTimer.ipAddress,
@@ -492,6 +497,7 @@ export class TimeEntriesService {
           durationMinutes: durationMinutes > 0 ? durationMinutes : 1,
           entryType: activeTimer.entryType,
           source: 'WEB',
+          isInOffice: activeTimer.isInOffice,
         },
         include: {
           user: {
@@ -509,6 +515,7 @@ export class TimeEntriesService {
           projectId: dto.projectId,
           startTime: switchTime,
           entryType: dto.entryType ?? 'WORK',
+          isInOffice: dto.isInOffice ?? activeTimer.isInOffice ?? false,
         },
         include: {
           user: {
@@ -592,6 +599,7 @@ export class TimeEntriesService {
         durationMinutes: durationMinutes > 0 ? durationMinutes : 1,
         entryType: dto.entryType ?? 'WORK',
         source: dto.source ?? 'WEB',
+        isInOffice: dto.isInOffice ?? false,
         isManual: true,
       },
       include: {
@@ -637,6 +645,7 @@ export class TimeEntriesService {
           ? new Date(updateTimeEntryDto.endTime)
           : undefined,
         durationMinutes: updateTimeEntryDto.durationMinutes,
+        isInOffice: updateTimeEntryDto.isInOffice,
         isModified: true,
       },
       include: {
@@ -668,6 +677,7 @@ export class TimeEntriesService {
       durationMinutes: timeEntry.durationMinutes,
       entryType: timeEntry.entryType,
       source: timeEntry.source,
+      isInOffice: timeEntry.isInOffice,
       isManual: timeEntry.isManual,
       isModified: timeEntry.isModified,
       createdAt: timeEntry.createdAt,
@@ -688,6 +698,7 @@ export class TimeEntriesService {
       endTime: timeEntry.endTime,
       durationMinutes: timeEntry.durationMinutes,
       entryType: timeEntry.entryType,
+      isInOffice: timeEntry.isInOffice,
       createdAt: timeEntry.createdAt,
     };
   }
@@ -705,6 +716,7 @@ export class TimeEntriesService {
       companyId: activeTimer.companyId,
       startTime: activeTimer.startTime,
       entryType: activeTimer.entryType,
+      isInOffice: activeTimer.isInOffice,
       user: activeTimer.user,
       project: activeTimer.project,
     };
