@@ -42,6 +42,7 @@ export class UsersService {
       const users = await this.prisma.user.findMany({
         where: {
           companyId,
+          deletedAt: null,
         },
         orderBy: {
           createdAt: 'desc',
@@ -66,6 +67,7 @@ export class UsersService {
         where: {
           id,
           companyId,
+          deletedAt: null,
         },
       });
 
@@ -199,8 +201,16 @@ export class UsersService {
 
       await this.supabaseService.deleteUser(user.authId);
 
-      await this.prisma.user.delete({
+      await this.prisma.activeTimer.deleteMany({
+        where: { userId: id },
+      });
+
+      await this.prisma.user.update({
         where: { id },
+        data: {
+          deletedAt: new Date(),
+          isActive: false,
+        },
       });
     } catch (error) {
       if (
