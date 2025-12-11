@@ -56,8 +56,12 @@ export class NagerDateService {
     regionCode: string,
   ): NagerHoliday[] {
     return holidays.filter((holiday) => {
-      // Global holidays apply to all regions
-      if (holiday.global) {
+      // Holidays with no counties or marked as global apply to all regions
+      if (
+        holiday.global ||
+        !holiday.counties ||
+        holiday.counties.length === 0
+      ) {
         return true;
       }
 

@@ -83,38 +83,78 @@ export class HolidaysService {
     );
 
     let added = 0;
-    const updated = 0;
+    let updated = 0;
 
     for (const holiday of holidays) {
-      const isNational = holiday.global;
+      const date = new Date(holiday.date);
+      const isNational =
+        holiday.global || !holiday.counties || holiday.counties.length === 0;
       const effectiveRegionCode = isNational ? null : regionCode;
 
       try {
-        await this.prisma.publicHoliday.upsert({
-          where: {
-            date_country_regionCode: {
-              date: new Date(holiday.date),
+        if (isNational) {
+          const existingNational = await this.prisma.publicHoliday.findFirst({
+            where: {
+              date,
               country: 'ES',
-              regionCode: effectiveRegionCode as string,
+              regionCode: null,
             },
-          },
-          create: {
-            date: new Date(holiday.date),
-            name: holiday.name,
-            localName: holiday.localName,
-            country: 'ES',
-            regionCode: effectiveRegionCode,
-            year,
-            isFixed: holiday.fixed,
-            source: 'API',
-          },
-          update: {
-            name: holiday.name,
-            localName: holiday.localName,
-            isFixed: holiday.fixed,
-          },
-        });
-        added++;
+          });
+
+          if (existingNational) {
+            await this.prisma.publicHoliday.update({
+              where: { id: existingNational.id },
+              data: {
+                name: holiday.name,
+                localName: holiday.localName,
+                isFixed: holiday.fixed,
+                year,
+                source: 'API',
+              },
+            });
+            updated++;
+          } else {
+            await this.prisma.publicHoliday.create({
+              data: {
+                date,
+                name: holiday.name,
+                localName: holiday.localName,
+                country: 'ES',
+                regionCode: null,
+                year,
+                isFixed: holiday.fixed,
+                source: 'API',
+              },
+            });
+            added++;
+          }
+        } else {
+          await this.prisma.publicHoliday.upsert({
+            where: {
+              date_country_regionCode: {
+                date,
+                country: 'ES',
+                regionCode: effectiveRegionCode as string,
+              },
+            },
+            create: {
+              date,
+              name: holiday.name,
+              localName: holiday.localName,
+              country: 'ES',
+              regionCode: effectiveRegionCode,
+              year,
+              isFixed: holiday.fixed,
+              source: 'API',
+            },
+            update: {
+              name: holiday.name,
+              localName: holiday.localName,
+              isFixed: holiday.fixed,
+            },
+          });
+          added++;
+        }
       } catch (error) {
         this.logger.warn(`Error upserting holiday ${holiday.date}: ${error}`);
       }
