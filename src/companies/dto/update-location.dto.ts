@@ -1,22 +1,6 @@
-import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 
-export class CreateCompanyDto {
-  // Company info
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(255)
-  companyName: string;
-
-  @IsString()
-  @IsOptional()
-  @MaxLength(50)
-  cif?: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(255)
-  userName: string;
-
+export class UpdateLocationDto {
   // Location - Region required (for holiday API)
   @IsString()
   @IsNotEmpty()

@@ -14,6 +14,10 @@ import { OnboardingModule } from './onboarding/onboarding.module.js';
 import { InvitationsModule } from './invitations/invitations.module.js';
 import { JoinRequestsModule } from './join-requests/join-requests.module.js';
 import { SupportModule } from './support/support.module.js';
+import { HolidaysModule } from './holidays/holidays.module.js';
+import { AbsencesModule } from './absences/absences.module.js';
+import { CalendarModule } from './calendar/calendar.module.js';
+import { LocationsModule } from './locations/locations.module.js';
 
 @Module({
   imports: [
@@ -30,6 +34,10 @@ import { SupportModule } from './support/support.module.js';
     InvitationsModule,
     JoinRequestsModule,
     SupportModule,
+    HolidaysModule,
+    AbsencesModule,
+    CalendarModule,
+    LocationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

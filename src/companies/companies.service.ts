@@ -1,10 +1,13 @@
 import {
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
-import type { Company, BillingPlan } from '@prisma/client';
+import { HolidaysService } from '../holidays/holidays.service.js';
+import type { Company, BillingPlan, CompanyLocation } from '@prisma/client';
+import type { UpdateLocationDto } from './dto/update-location.dto.js';
 import { randomBytes } from 'crypto';
 
 export interface CompanyResponse {
@@ -24,9 +27,25 @@ export interface CompanyPublicResponse {
   logoUrl: string | null;
 }
 
+export interface LocationResponse {
+  id: string;
+  country: string;
+  regionCode: string;
+  provinceCode: string;
+  municipalityName: string;
+  address: string;
+  postalCode: string;
+  timezone: string;
+}
+
 @Injectable()
 export class CompaniesService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(CompaniesService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly holidaysService: HolidaysService,
+  ) {}
 
   async findOne(id: string): Promise<CompanyResponse> {
     const company = await this.prisma.company.findUnique({
@@ -125,6 +144,96 @@ export class CompaniesService {
       where: { id: companyId },
       data: { inviteCode: null },
     });
+  }
+
+  // ============================================
+  // LOCATION METHODS
+  // ============================================
+
+  /**
+   * Get company location
+   */
+  async getLocation(companyId: string): Promise<LocationResponse> {
+    const location = await this.prisma.companyLocation.findUnique({
+      where: { companyId },
+    });
+
+    if (!location) {
+      throw new NotFoundException('Ubicación de la empresa no configurada');
+    }
+
+    return this.toLocationResponse(location);
+  }
+
+  /**
+   * Update company location (triggers holiday re-sync if region changes)
+   */
+  async updateLocation(
+    companyId: string,
+    dto: UpdateLocationDto,
+  ): Promise<LocationResponse> {
+    // Check if location exists
+    const existingLocation = await this.prisma.companyLocation.findUnique({
+      where: { companyId },
+    });
+
+    const regionChanged =
+      existingLocation && existingLocation.regionCode !== dto.regionCode;
+
+    // Upsert location
+    const location = await this.prisma.companyLocation.upsert({
+      where: { companyId },
+      create: {
+        companyId,
+        country: 'ES',
+        regionCode: dto.regionCode,
+        provinceCode: dto.provinceCode,
+        municipalityName: dto.municipalityName,
+        address: dto.address,
+        postalCode: dto.postalCode,
+      },
+      update: {
+        regionCode: dto.regionCode,
+        provinceCode: dto.provinceCode,
+        municipalityName: dto.municipalityName,
+        address: dto.address,
+        postalCode: dto.postalCode,
+      },
+    });
+
+    // If region changed, sync holidays for the new region
+    if (regionChanged || !existingLocation) {
+      try {
+        const currentYear = new Date().getFullYear();
+        await this.holidaysService.syncHolidaysForCompany(
+          companyId,
+          dto.regionCode,
+          [currentYear, currentYear + 1],
+        );
+        this.logger.log(
+          `Holidays re-synced for company ${companyId} due to region change to ${dto.regionCode}`,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to sync holidays after location update: ${error}`,
+        );
+      }
+    }
+
+    return this.toLocationResponse(location);
+  }
+
+  private toLocationResponse(location: CompanyLocation): LocationResponse {
+    return {
+      id: location.id,
+      country: location.country,
+      regionCode: location.regionCode,
+      provinceCode: location.provinceCode,
+      municipalityName: location.municipalityName,
+      address: location.address,
+      postalCode: location.postalCode,
+      timezone: location.timezone,
+    };
   }
 
   private toCompanyResponse(company: Company): CompanyResponse {

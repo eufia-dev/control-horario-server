@@ -2,9 +2,11 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { HolidaysService } from '../holidays/holidays.service.js';
 import { CreateCompanyDto, RequestJoinDto } from './dto/index.js';
 import type { UserRole } from '@prisma/client';
 import { randomBytes } from 'crypto';
@@ -35,7 +37,12 @@ export interface OnboardingStatus {
 
 @Injectable()
 export class OnboardingService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(OnboardingService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly holidaysService: HolidaysService,
+  ) {}
 
   /**
    * Check the onboarding status for a Supabase user
@@ -140,13 +147,26 @@ export class OnboardingService {
     // Generate a unique invite code for the company
     const inviteCode = this.generateInviteCode();
 
-    // Create company and user in a transaction
+    // Create company, location, and user in a transaction
     const result = await this.prisma.$transaction(async (tx) => {
       const company = await tx.company.create({
         data: {
           name: dto.companyName,
           cif: dto.cif || null,
           inviteCode,
+        },
+      });
+
+      // Create company location with full address
+      await tx.companyLocation.create({
+        data: {
+          companyId: company.id,
+          country: 'ES',
+          regionCode: dto.regionCode,
+          provinceCode: dto.provinceCode,
+          municipalityName: dto.municipalityName,
+          address: dto.address,
+          postalCode: dto.postalCode,
         },
       });
 
@@ -163,6 +183,22 @@ export class OnboardingService {
 
       return { company, user };
     });
+
+    // After transaction: sync holidays using regionCode
+    try {
+      const currentYear = new Date().getFullYear();
+      await this.holidaysService.syncHolidaysForCompany(
+        result.company.id,
+        dto.regionCode,
+        [currentYear, currentYear + 1],
+      );
+      this.logger.log(
+        `Holidays synced for new company ${result.company.id} in region ${dto.regionCode}`,
+      );
+    } catch (error) {
+      // Log error but don't fail company creation if holiday sync fails
+      this.logger.error(`Failed to sync holidays for company: ${error}`);
+    }
 
     return {
       status: 'ACTIVE',

@@ -1,9 +1,11 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
   Param,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
@@ -15,8 +17,10 @@ import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
 import {
   CompanyResponse,
   CompanyPublicResponse,
+  LocationResponse,
   CompaniesService,
 } from './companies.service.js';
+import { UpdateLocationDto } from './dto/update-location.dto.js';
 
 type RequestWithUser = Request & { user: JwtPayload };
 
@@ -70,5 +74,31 @@ export class CompaniesController {
   ): Promise<{ success: boolean }> {
     await this.companiesService.removeInviteCode(req.user.companyId);
     return { success: true };
+  }
+
+  // ============================================
+  // LOCATION ENDPOINTS
+  // ============================================
+
+  /**
+   * Get company location
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('location')
+  getLocation(@Req() req: RequestWithUser): Promise<LocationResponse> {
+    return this.companiesService.getLocation(req.user.companyId);
+  }
+
+  /**
+   * Update company location (admin only)
+   * Triggers holiday re-sync if region changes
+   */
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @Put('location')
+  updateLocation(
+    @Body() dto: UpdateLocationDto,
+    @Req() req: RequestWithUser,
+  ): Promise<LocationResponse> {
+    return this.companiesService.updateLocation(req.user.companyId, dto);
   }
 }

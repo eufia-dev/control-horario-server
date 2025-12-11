@@ -32,6 +32,9 @@ model Company {
   externalHours     ExternalHours[]
   invitations       CompanyInvitation[]
   joinRequests      JoinRequest[]
+  location          CompanyLocation?
+  companyHolidays   CompanyHoliday[]
+  userAbsences      UserAbsence[]
 
   @@map("companies")
 }
@@ -69,9 +72,11 @@ model User {
 
   company Company @relation(fields: [companyId], references: [id])
 
-  timeEntries TimeEntry[]
-  activeTimer ActiveTimer?
-  auditLogs   AuditLog[]   @relation("Actor")
+  timeEntries      TimeEntry[]
+  activeTimer      ActiveTimer?
+  auditLogs        AuditLog[]     @relation("Actor")
+  absences         UserAbsence[]  @relation("UserAbsences")
+  reviewedAbsences UserAbsence[]  @relation("AbsenceReviewer")
 
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime? @updatedAt @map("updated_at")
@@ -373,4 +378,129 @@ enum JoinRequestStatus {
   PENDING
   APPROVED
   REJECTED
+}
+
+// ---------------------------------------------------------
+// 9. COMPANY LOCATION
+// ---------------------------------------------------------
+model CompanyLocation {
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String @unique @map("company_id") @db.Uuid
+
+  // Country (ISO 3166-1 alpha-2)
+  country String @default("ES") @db.VarChar(2)
+
+  // Autonomous Community (ISO 3166-2:ES) - used for Nager.Date API
+  regionCode String @map("region_code") @db.VarChar(10)
+
+  // Province (INE 2-digit code)
+  provinceCode String @map("province_code") @db.VarChar(2)
+
+  // Municipality (INE 5-digit code: province + municipality)
+  municipalityName String @map("municipality_name") @db.VarChar(100)
+
+  // Full address for reference
+  address    String @db.VarChar(500)
+  postalCode String @map("postal_code") @db.VarChar(10)
+
+  timezone String @default("Europe/Madrid") @db.VarChar(50)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("company_locations")
+}
+
+// ---------------------------------------------------------
+// 10. PUBLIC HOLIDAYS
+// ---------------------------------------------------------
+model PublicHoliday {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  date      DateTime @db.Date
+  name      String   @db.VarChar(255)
+  localName String?  @map("local_name") @db.VarChar(255)
+
+  country    String  @db.VarChar(2)
+  regionCode String? @map("region_code") @db.VarChar(10)
+
+  year    Int
+  isFixed Boolean @default(false) @map("is_fixed")
+
+  source HolidaySource @default(API)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([date, country, regionCode])
+  @@index([year, country])
+  @@map("public_holidays")
+}
+
+enum HolidaySource {
+  API
+  MANUAL
+}
+
+// ---------------------------------------------------------
+// 11. COMPANY CUSTOM HOLIDAYS
+// ---------------------------------------------------------
+model CompanyHoliday {
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String @map("company_id") @db.Uuid
+
+  date        DateTime @db.Date
+  name        String   @db.VarChar(255)
+  isRecurring Boolean  @default(false) @map("is_recurring")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([companyId, date])
+  @@map("company_holidays")
+}
+
+// ---------------------------------------------------------
+// 12. USER ABSENCES
+// ---------------------------------------------------------
+model UserAbsence {
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String @map("user_id") @db.Uuid
+  companyId String @map("company_id") @db.Uuid
+
+  startDate DateTime @map("start_date") @db.Date
+  endDate   DateTime @map("end_date") @db.Date
+  type      AbsenceType
+
+  status       AbsenceStatus @default(PENDING)
+  notes        String?
+  reviewedById String?       @map("reviewed_by_id") @db.Uuid
+  reviewedAt   DateTime?     @map("reviewed_at") @db.Timestamptz(6)
+
+  user       User    @relation("UserAbsences", fields: [userId], references: [id])
+  reviewedBy User?   @relation("AbsenceReviewer", fields: [reviewedById], references: [id])
+  company    Company @relation(fields: [companyId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId, startDate])
+  @@index([companyId, status])
+  @@map("user_absences")
+}
+
+enum AbsenceType {
+  VACATION
+  SICK_LEAVE
+  PERSONAL_LEAVE
+  MATERNITY
+  PATERNITY
+  UNPAID_LEAVE
+  TRAINING
+  OTHER
+}
+
+enum AbsenceStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
 }
