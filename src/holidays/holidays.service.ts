@@ -5,7 +5,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { NagerDateService, type NagerHoliday } from './nager-date.service.js';
+import { NagerDateService } from './nager-date.service.js';
 import type { CreateCompanyHolidayDto } from './dto/create-company-holiday.dto.js';
 import type {
   PublicHoliday,

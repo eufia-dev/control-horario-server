@@ -36,7 +36,7 @@ export class NagerDateService {
         return [];
       }
 
-      const holidays: NagerHoliday[] = await response.json();
+      const holidays = (await response.json()) as NagerHoliday[];
       this.logger.log(
         `Fetched ${holidays.length} holidays for ${countryCode} ${year}`,
       );
