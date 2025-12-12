@@ -131,25 +131,42 @@ export class CalendarService {
   }
 
   /**
-   * Get work schedules for a user (user-specific or company default)
+   * Get work schedules for a user (merges company defaults with user overrides per day)
    */
   private async getWorkSchedules(
     companyId: string,
     userId: string,
   ): Promise<WorkSchedule[]> {
-    // First try to get user-specific schedules
-    let schedules = await this.prisma.workSchedule.findMany({
-      where: { companyId, userId },
+    // Load both defaults and overrides in parallel
+    const [defaults, overrides] = await Promise.all([
+      this.prisma.workSchedule.findMany({
+        where: { companyId, userId: null },
+      }),
+      this.prisma.workSchedule.findMany({
+        where: { companyId, userId },
+      }),
+    ]);
+
+    // Merge: override wins if present for a day, otherwise use default
+    const overrideMap = new Map<number, WorkSchedule>();
+    overrides.forEach((o) => overrideMap.set(o.dayOfWeek, o));
+
+    const effective: WorkSchedule[] = [];
+
+    // Start with defaults, but replace with override if exists
+    defaults.forEach((d) => {
+      const override = overrideMap.get(d.dayOfWeek);
+      effective.push(override || d);
     });
 
-    // If no user-specific schedules, get company defaults
-    if (schedules.length === 0) {
-      schedules = await this.prisma.workSchedule.findMany({
-        where: { companyId, userId: null },
-      });
-    }
+    // Also include overrides for days not in defaults
+    overrides.forEach((o) => {
+      if (!defaults.some((d) => d.dayOfWeek === o.dayOfWeek)) {
+        effective.push(o);
+      }
+    });
 
-    return schedules;
+    return effective;
   }
 
   /**

@@ -253,4 +253,31 @@ export class CompaniesService {
       logoUrl: company.logoUrl,
     };
   }
+
+  /**
+   * Update company settings (admin only)
+   */
+  async updateSettings(
+    companyId: string,
+    allowUserEditSchedule?: boolean,
+  ): Promise<CompanyResponse> {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+    });
+
+    if (!company) {
+      throw new NotFoundException(`Empresa con ID ${companyId} no encontrada`);
+    }
+
+    const updated = await this.prisma.company.update({
+      where: { id: companyId },
+      data: {
+        ...(allowUserEditSchedule !== undefined && {
+          allowUserEditSchedule,
+        }),
+      },
+    });
+
+    return this.toCompanyResponse(updated);
+  }
 }

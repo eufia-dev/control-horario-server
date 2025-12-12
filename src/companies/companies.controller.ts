@@ -21,6 +21,7 @@ import {
   CompaniesService,
 } from './companies.service.js';
 import { UpdateLocationDto } from './dto/update-location.dto.js';
+import { UpdateCompanySettingsDto } from './dto/update-company-settings.dto.js';
 
 type RequestWithUser = Request & { user: JwtPayload };
 
@@ -100,5 +101,20 @@ export class CompaniesController {
     @Req() req: RequestWithUser,
   ): Promise<LocationResponse> {
     return this.companiesService.updateLocation(req.user.companyId, dto);
+  }
+
+  /**
+   * Update company settings (admin only)
+   */
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @Put('settings')
+  updateSettings(
+    @Body() dto: UpdateCompanySettingsDto,
+    @Req() req: RequestWithUser,
+  ): Promise<CompanyResponse> {
+    return this.companiesService.updateSettings(
+      req.user.companyId,
+      dto.allowUserEditSchedule,
+    );
   }
 }

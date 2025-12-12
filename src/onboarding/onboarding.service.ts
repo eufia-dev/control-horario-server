@@ -169,6 +169,17 @@ export class OnboardingService {
         },
       });
 
+      // Create default work schedule: Mon-Fri 09:00-17:00
+      await tx.workSchedule.createMany({
+        data: [
+          { companyId: company.id, userId: null, dayOfWeek: 0, startTime: '09:00', endTime: '17:00' }, // Monday
+          { companyId: company.id, userId: null, dayOfWeek: 1, startTime: '09:00', endTime: '17:00' }, // Tuesday
+          { companyId: company.id, userId: null, dayOfWeek: 2, startTime: '09:00', endTime: '17:00' }, // Wednesday
+          { companyId: company.id, userId: null, dayOfWeek: 3, startTime: '09:00', endTime: '17:00' }, // Thursday
+          { companyId: company.id, userId: null, dayOfWeek: 4, startTime: '09:00', endTime: '17:00' }, // Friday
+        ],
+      });
+
       const user = await tx.user.create({
         data: {
           authId,

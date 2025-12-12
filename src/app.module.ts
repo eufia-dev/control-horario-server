@@ -18,6 +18,7 @@ import { HolidaysModule } from './holidays/holidays.module.js';
 import { AbsencesModule } from './absences/absences.module.js';
 import { CalendarModule } from './calendar/calendar.module.js';
 import { LocationsModule } from './locations/locations.module.js';
+import { WorkSchedulesModule } from './work-schedules/work-schedules.module.js';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { LocationsModule } from './locations/locations.module.js';
     AbsencesModule,
     CalendarModule,
     LocationsModule,
+    WorkSchedulesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
