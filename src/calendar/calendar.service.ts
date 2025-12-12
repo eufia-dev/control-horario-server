@@ -25,6 +25,23 @@ export class CalendarService {
     private readonly absencesService: AbsencesService,
   ) {}
 
+  private formatLocalDateKey(date: Date): string {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  /**
+   * ISO-style weekday index used by this API:
+   * 0 = Monday, 1 = Tuesday, ... 5 = Saturday, 6 = Sunday
+   */
+  private getIsoDayOfWeek(date: Date): number {
+    // JS getDay(): 0=Sunday..6=Saturday
+    // Convert to ISO-like index: Monday=0..Sunday=6
+    return (date.getDay() + 6) % 7;
+  }
+
   /**
    * Get calendar with computed day statuses for a user
    */
@@ -34,46 +51,38 @@ export class CalendarService {
     from: Date,
     to: Date,
   ): Promise<CalendarResponse> {
-    // Get user info
-    const user = await this.prisma.user.findFirst({
-      where: { id: userId, companyId },
-    });
+    // Fetch user + location in parallel (location is needed for public holidays)
+    const [user, location] = await Promise.all([
+      this.prisma.user.findFirst({
+        where: { id: userId, companyId },
+      }),
+      this.prisma.companyLocation.findUnique({
+        where: { companyId },
+      }),
+    ]);
 
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
     }
 
-    // Get company location for regional holidays
-    const location = await this.prisma.companyLocation.findUnique({
-      where: { companyId },
-    });
-
-    // Get work schedules (user-specific or company default)
-    const schedules = await this.getWorkSchedules(companyId, userId);
-
-    // Get public holidays in range
-    const publicHolidays = location
-      ? await this.holidaysService.getPublicHolidaysInRange(
+    const publicHolidaysPromise = location
+      ? this.holidaysService.getPublicHolidaysInRange(
           location.regionCode,
           from,
           to,
         )
-      : [];
+      : Promise.resolve([]);
 
-    // Get company custom holidays in range
-    const companyHolidays =
-      await this.holidaysService.getCompanyHolidaysInRange(companyId, from, to);
-
-    // Get user absences (approved only) in range
-    const absences = await this.absencesService.getAbsencesInRange(
+    const schedulesPromise = this.getWorkSchedules(companyId, userId);
+    const companyHolidaysPromise =
+      this.holidaysService.getCompanyHolidaysInRange(companyId, from, to);
+    const absencesPromise = this.absencesService.getAbsencesInRange(
       companyId,
       userId,
       from,
       to,
     );
-
-    // Get time entries in range
-    const timeEntries = await this.prisma.timeEntry.findMany({
+    const timeEntriesPromise = this.prisma.timeEntry.findMany({
       where: {
         userId,
         companyId,
@@ -86,6 +95,16 @@ export class CalendarService {
       },
       orderBy: { startTime: 'asc' },
     });
+
+    // Everything below is independent, so resolve simultaneously
+    const [schedules, publicHolidays, companyHolidays, absences, timeEntries] =
+      await Promise.all([
+        schedulesPromise,
+        publicHolidaysPromise,
+        companyHolidaysPromise,
+        absencesPromise,
+        timeEntriesPromise,
+      ]);
 
     // Build calendar days
     const days = this.buildCalendarDays(
@@ -104,8 +123,8 @@ export class CalendarService {
     return {
       userId: user.id,
       userName: user.name,
-      from: from.toISOString().split('T')[0],
-      to: to.toISOString().split('T')[0],
+      from: this.formatLocalDateKey(from),
+      to: this.formatLocalDateKey(to),
       days,
       summary,
     };
@@ -154,13 +173,13 @@ export class CalendarService {
     // Create maps for quick lookup
     const publicHolidayMap = new Map<string, PublicHoliday>();
     publicHolidays.forEach((h) => {
-      const dateKey = h.date.toISOString().split('T')[0];
+      const dateKey = this.formatLocalDateKey(h.date);
       publicHolidayMap.set(dateKey, h);
     });
 
     const companyHolidayMap = new Map<string, CompanyHoliday>();
     companyHolidays.forEach((h) => {
-      const dateKey = h.date.toISOString().split('T')[0];
+      const dateKey = this.formatLocalDateKey(h.date);
       companyHolidayMap.set(dateKey, h);
     });
 
@@ -176,7 +195,7 @@ export class CalendarService {
       (TimeEntry & { project: { id: string; name: string } | null })[]
     >();
     timeEntries.forEach((e) => {
-      const dateKey = e.startTime.toISOString().split('T')[0];
+      const dateKey = this.formatLocalDateKey(e.startTime);
       const existing = entriesByDate.get(dateKey) || [];
       existing.push(e);
       entriesByDate.set(dateKey, existing);
@@ -184,9 +203,10 @@ export class CalendarService {
 
     // Iterate through each day in range
     const currentDate = new Date(from);
+    currentDate.setHours(0, 0, 0, 0);
     while (currentDate <= to) {
-      const dateKey = currentDate.toISOString().split('T')[0];
-      const dayOfWeek = currentDate.getDay(); // 0 = Sunday
+      const dateKey = this.formatLocalDateKey(currentDate);
+      const dayOfWeek = this.getIsoDayOfWeek(currentDate); // 0 = Monday ... 6 = Sunday (local)
       const schedule = scheduleMap.get(dayOfWeek);
 
       // Check if this date is a public holiday

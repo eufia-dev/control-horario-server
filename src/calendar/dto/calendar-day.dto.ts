@@ -22,7 +22,7 @@ export interface TimeEntryBrief {
 
 export interface CalendarDay {
   date: string; // ISO date string YYYY-MM-DD
-  dayOfWeek: number; // 0 = Sunday, 1 = Monday, etc.
+  dayOfWeek: number; // 0 = Monday, 1 = Tuesday, ... 5 = Saturday, 6 = Sunday
   status: DayStatus;
   holidayName?: string;
   absenceType?: AbsenceType;

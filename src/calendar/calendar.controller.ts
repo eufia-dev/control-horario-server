@@ -8,6 +8,12 @@ import { CalendarQueryDto } from './dto/calendar-query.dto.js';
 
 type RequestWithUser = Request & { user: JwtPayload };
 
+function parseLocalDateOnly(dateStr: string): Date {
+  // Avoid JS Date parsing quirks/timezone shifts for "YYYY-MM-DD" (often treated as UTC).
+  const [y, m, d] = dateStr.split('-').map((v) => Number(v));
+  return new Date(y, m - 1, d);
+}
+
 @Controller('calendar')
 @UseGuards(JwtAuthGuard)
 export class CalendarController {
@@ -24,8 +30,8 @@ export class CalendarController {
     @Req() req: RequestWithUser,
   ): Promise<CalendarResponse> {
     const userId = query.userId || req.user.sub;
-    const from = new Date(query.from);
-    const to = new Date(query.to);
+    const from = parseLocalDateOnly(query.from);
+    const to = parseLocalDateOnly(query.to);
 
     // Set time to start/end of day
     from.setHours(0, 0, 0, 0);
@@ -49,8 +55,8 @@ export class CalendarController {
     @Query('to') to: string,
     @Req() req: RequestWithUser,
   ): Promise<CalendarResponse> {
-    const fromDate = new Date(from);
-    const toDate = new Date(to);
+    const fromDate = parseLocalDateOnly(from);
+    const toDate = parseLocalDateOnly(to);
 
     fromDate.setHours(0, 0, 0, 0);
     toDate.setHours(23, 59, 59, 999);
