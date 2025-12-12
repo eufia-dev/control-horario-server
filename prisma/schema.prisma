@@ -387,9 +387,6 @@ model CompanyLocation {
   id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   companyId String @unique @map("company_id") @db.Uuid
 
-  // Country (ISO 3166-1 alpha-2)
-  country String @default("ES") @db.VarChar(2)
-
   // Autonomous Community (ISO 3166-2:ES) - used for Nager.Date API
   regionCode String @map("region_code") @db.VarChar(10)
 

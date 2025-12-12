@@ -161,7 +161,6 @@ export class OnboardingService {
       await tx.companyLocation.create({
         data: {
           companyId: company.id,
-          country: 'ES',
           regionCode: dto.regionCode,
           provinceCode: dto.provinceCode,
           municipalityName: dto.municipalityName,

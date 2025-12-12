@@ -29,7 +29,6 @@ export interface CompanyPublicResponse {
 
 export interface LocationResponse {
   id: string;
-  country: string;
   regionCode: string;
   provinceCode: string;
   municipalityName: string;
@@ -185,7 +184,6 @@ export class CompaniesService {
       where: { companyId },
       create: {
         companyId,
-        country: 'ES',
         regionCode: dto.regionCode,
         provinceCode: dto.provinceCode,
         municipalityName: dto.municipalityName,
@@ -226,7 +224,6 @@ export class CompaniesService {
   private toLocationResponse(location: CompanyLocation): LocationResponse {
     return {
       id: location.id,
-      country: location.country,
       regionCode: location.regionCode,
       provinceCode: location.provinceCode,
       municipalityName: location.municipalityName,
