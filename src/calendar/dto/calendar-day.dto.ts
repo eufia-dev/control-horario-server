@@ -8,7 +8,8 @@ export type DayStatus =
   | 'WORKED'
   | 'PARTIALLY_WORKED'
   | 'MISSING_LOGS'
-  | 'FUTURE';
+  | 'FUTURE'
+  | 'BEFORE_USER_CREATED';
 
 export interface TimeEntryBrief {
   id: string;

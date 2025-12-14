@@ -115,6 +115,7 @@ export class CalendarService {
       companyHolidays,
       absences,
       timeEntries,
+      user.createdAt,
     );
 
     // Calculate summary
@@ -182,10 +183,15 @@ export class CalendarService {
     timeEntries: (TimeEntry & {
       project: { id: string; name: string } | null;
     })[],
+    userCreatedAt: Date,
   ): CalendarDay[] {
     const days: CalendarDay[] = [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+
+    // Normalize userCreatedAt to start of day for comparison
+    const userCreatedDate = new Date(userCreatedAt);
+    userCreatedDate.setHours(0, 0, 0, 0);
 
     // Create maps for quick lookup
     const publicHolidayMap = new Map<string, PublicHoliday>();
@@ -252,6 +258,7 @@ export class CalendarService {
         this.determineStatus(
           currentDate,
           today,
+          userCreatedDate,
           publicHoliday,
           companyHoliday,
           absence,
@@ -314,6 +321,7 @@ export class CalendarService {
   private determineStatus(
     date: Date,
     today: Date,
+    userCreatedDate: Date,
     publicHoliday: PublicHoliday | undefined,
     companyHoliday: CompanyHoliday | undefined,
     absence: UserAbsence | undefined,
@@ -326,6 +334,11 @@ export class CalendarService {
     absenceType?: UserAbsence['type'];
     isOvertime?: boolean;
   } {
+    // Days before user was created - no logs expected
+    if (date < userCreatedDate) {
+      return { status: 'BEFORE_USER_CREATED' };
+    }
+
     // Future dates
     if (date > today) {
       // Still show holidays/absences for future dates
@@ -411,8 +424,8 @@ export class CalendarService {
     let totalLoggedMinutes = 0;
 
     for (const day of days) {
-      // Skip future days for most calculations
-      if (day.status === 'FUTURE') {
+      // Skip future days and days before user was created for most calculations
+      if (day.status === 'FUTURE' || day.status === 'BEFORE_USER_CREATED') {
         continue;
       }
 
