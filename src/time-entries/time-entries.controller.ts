@@ -14,6 +14,7 @@ import {
 import type { Request } from 'express';
 import { AdminGuard } from '../auth/admin.guard.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { NotGuestGuard } from '../auth/not-guest.guard.js';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
 import { CreateTimeEntryDto } from './dto/create-time-entry.dto.js';
 import { AdminCreateTimeEntryDto } from './dto/admin-create-time-entry.dto.js';
@@ -59,6 +60,7 @@ export class TimeEntriesController {
   }
 
   @Post('me')
+  @UseGuards(NotGuestGuard)
   create(
     @Body() createTimeEntryDto: CreateTimeEntryDto,
     @Req() req: RequestWithUser,
@@ -93,6 +95,7 @@ export class TimeEntriesController {
   }
 
   @Patch('me/:id')
+  @UseGuards(NotGuestGuard)
   updateMine(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateTimeEntryDto: UpdateTimeEntryDto,
@@ -107,6 +110,7 @@ export class TimeEntriesController {
   }
 
   @Delete('me/:id')
+  @UseGuards(NotGuestGuard)
   removeMine(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithUser,
@@ -124,6 +128,7 @@ export class TimeEntriesController {
   // ============================================
 
   @Post('me/timer/start')
+  @UseGuards(NotGuestGuard)
   startTimer(
     @Body() dto: StartTimerDto,
     @Req() req: RequestWithUser,
@@ -136,11 +141,13 @@ export class TimeEntriesController {
   }
 
   @Post('me/timer/stop')
+  @UseGuards(NotGuestGuard)
   stopTimer(@Req() req: RequestWithUser): Promise<TimeEntryResponse> {
     return this.timeEntriesService.stopTimer(req.user.sub, req.user.companyId);
   }
 
   @Post('me/timer/switch')
+  @UseGuards(NotGuestGuard)
   switchTimer(
     @Body() dto: SwitchTimerDto,
     @Req() req: RequestWithUser,
@@ -153,6 +160,7 @@ export class TimeEntriesController {
   }
 
   @Delete('me/timer')
+  @UseGuards(NotGuestGuard)
   cancelTimer(@Req() req: RequestWithUser): Promise<ActiveTimerResponse> {
     return this.timeEntriesService.cancelTimer(
       req.user.sub,

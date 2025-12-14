@@ -14,6 +14,7 @@ import {
 import type { Request } from 'express';
 import { AdminGuard } from '../auth/admin.guard.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { NotGuestGuard } from '../auth/not-guest.guard.js';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
 import { CreateAbsenceDto } from './dto/create-absence.dto.js';
 import { ReviewAbsenceDto } from './dto/review-absence.dto.js';
@@ -72,6 +73,7 @@ export class AbsencesController {
    * Request a new absence
    */
   @Post()
+  @UseGuards(NotGuestGuard)
   async createAbsence(
     @Body() dto: CreateAbsenceDto,
     @Req() req: RequestWithUser,
@@ -88,6 +90,7 @@ export class AbsencesController {
    * Cancel a pending absence (user can only cancel their own)
    */
   @Delete(':id')
+  @UseGuards(NotGuestGuard)
   async cancelAbsence(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithUser,

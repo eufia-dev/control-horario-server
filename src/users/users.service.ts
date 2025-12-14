@@ -146,6 +146,7 @@ export class UsersService {
             : undefined,
           isActive: updateUserDto.isActive,
           role: updateUserDto.role,
+          relationType: updateUserDto.relationType,
         },
       });
 

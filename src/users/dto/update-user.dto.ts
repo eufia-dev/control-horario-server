@@ -16,6 +16,12 @@ export enum UserRole {
   AUDITOR = 'AUDITOR',
 }
 
+export enum RelationType {
+  EMPLOYEE = 'EMPLOYEE',
+  CONTRACTOR = 'CONTRACTOR',
+  GUEST = 'GUEST',
+}
+
 export class UpdateUserDto {
   @IsString()
   @IsNotEmpty()
@@ -41,4 +47,8 @@ export class UpdateUserDto {
   @IsEnum(UserRole)
   @IsOptional()
   role: UserRole;
+
+  @IsEnum(RelationType)
+  @IsOptional()
+  relationType: RelationType;
 }

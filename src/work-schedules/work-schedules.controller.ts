@@ -12,6 +12,7 @@ import {
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { AdminGuard } from '../auth/admin.guard.js';
+import { NotGuestGuard } from '../auth/not-guest.guard.js';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
 import { WorkSchedulesService } from './work-schedules.service.js';
 import type { WorkScheduleResponse } from './dto/work-schedule-response.dto.js';
@@ -91,6 +92,7 @@ export class WorkSchedulesController {
    * Requires Company.allowUserEditSchedule = true
    */
   @Put('me')
+  @UseGuards(NotGuestGuard)
   async updateMySchedule(
     @Body() dto: UpdateWorkScheduleDto,
     @Req() req: RequestWithUser,
@@ -119,6 +121,7 @@ export class WorkSchedulesController {
    * Requires Company.allowUserEditSchedule = true
    */
   @Delete('me/overrides')
+  @UseGuards(NotGuestGuard)
   async deleteMyOverrides(@Req() req: RequestWithUser): Promise<void> {
     // Check if user is allowed to edit schedule
     const company = await this.prisma.company.findUnique({

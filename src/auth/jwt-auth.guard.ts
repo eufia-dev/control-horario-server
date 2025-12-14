@@ -8,7 +8,7 @@ import type { Request } from 'express';
 import { AuthService, OnboardingRequiredError } from './auth.service.js';
 import type { JwtPayload } from './interfaces/jwt-payload.interface.js';
 
-interface RequestWithUser extends Request {
+export interface RequestWithUser extends Request {
   user: JwtPayload;
 }
 
@@ -31,17 +31,22 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('Token de autenticación faltante');
     }
 
+    // Extract optional X-Profile-Id header for multi-tenancy support
+    const profileId = req.headers['x-profile-id'] as string | undefined;
+
     try {
       // Validate token via Supabase and get user data
-      const authUser = await this.authService.validateToken(token);
+      // If profileId is provided, it will validate that the profile belongs to this authId
+      const authUser = await this.authService.validateToken(token, profileId);
 
-      // Attach user payload to request
+      // Attach user payload to request (including relationType for NotGuestGuard)
       req.user = {
         sub: authUser.id,
         authId: authUser.authId,
         email: authUser.email,
         companyId: authUser.companyId,
         role: authUser.role,
+        relationType: authUser.relationType,
       };
 
       return true;

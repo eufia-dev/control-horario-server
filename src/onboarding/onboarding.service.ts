@@ -117,22 +117,14 @@ export class OnboardingService {
   }
 
   /**
-   * Create a new company and user as OWNER
+   * Create a new company and user as OWNER.
+   * Supports multi-tenancy: existing users can create additional companies.
    */
   async createCompany(
     authId: string,
     email: string,
     dto: CreateCompanyDto,
   ): Promise<OnboardingStatus> {
-    // Check if user already exists
-    const existingUser = await this.prisma.user.findFirst({
-      where: { authId },
-    });
-
-    if (existingUser) {
-      throw new ConflictException('El usuario ya tiene una cuenta');
-    }
-
     // Check if CIF is already in use (if provided)
     if (dto.cif) {
       const existingCompany = await this.prisma.company.findUnique({
@@ -224,7 +216,8 @@ export class OnboardingService {
   }
 
   /**
-   * Accept an invitation and create user
+   * Accept an invitation and create user profile in that company.
+   * Supports multi-tenancy: allows existing users to join additional companies.
    */
   async acceptInvitation(
     authId: string,
@@ -232,14 +225,6 @@ export class OnboardingService {
     token: string,
     userName: string,
   ): Promise<OnboardingStatus> {
-    const existingUser = await this.prisma.user.findFirst({
-      where: { authId },
-    });
-
-    if (existingUser) {
-      throw new ConflictException('El usuario ya tiene una cuenta');
-    }
-
     const invitation = await this.prisma.companyInvitation.findUnique({
       where: { token },
       include: { company: true },
@@ -262,7 +247,19 @@ export class OnboardingService {
       throw new BadRequestException('El email no coincide con la invitación');
     }
 
-    // Create user and mark invitation as used
+    // Check if user already exists in THIS specific company (not globally)
+    const existingUserInCompany = await this.prisma.user.findFirst({
+      where: {
+        authId,
+        companyId: invitation.companyId,
+      },
+    });
+
+    if (existingUserInCompany) {
+      throw new ConflictException('Ya eres miembro de esta empresa');
+    }
+
+    // Create user profile and mark invitation as used
     const result = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
@@ -271,6 +268,7 @@ export class OnboardingService {
           name: userName,
           companyId: invitation.companyId,
           role: invitation.role,
+          relationType: invitation.relationType,
           hourlyCost: 0,
         },
       });
@@ -280,7 +278,7 @@ export class OnboardingService {
         data: { usedAt: new Date() },
       });
 
-      // NEW: Cancel any pending join requests from this user to this company
+      // Cancel any pending join requests from this user to this company
       await tx.joinRequest.updateMany({
         where: {
           authId,
@@ -288,7 +286,7 @@ export class OnboardingService {
           status: 'PENDING',
         },
         data: {
-          status: 'APPROVED', // Or you could add a new status like 'CANCELLED' or 'RESOLVED_VIA_INVITATION'
+          status: 'APPROVED',
           reviewedAt: new Date(),
         },
       });
@@ -310,22 +308,14 @@ export class OnboardingService {
   }
 
   /**
-   * Request to join a company
+   * Request to join a company.
+   * Supports multi-tenancy: allows existing users to request joining additional companies.
    */
   async requestJoin(
     authId: string,
     email: string,
     dto: RequestJoinDto,
   ): Promise<{ id: string; companyName: string; status: string }> {
-    // Check if user already exists
-    const existingUser = await this.prisma.user.findFirst({
-      where: { authId },
-    });
-
-    if (existingUser) {
-      throw new ConflictException('El usuario ya tiene una cuenta');
-    }
-
     // Check if company exists
     const company = await this.prisma.company.findUnique({
       where: { id: dto.companyId },
@@ -333,6 +323,18 @@ export class OnboardingService {
 
     if (!company) {
       throw new NotFoundException('Empresa no encontrada');
+    }
+
+    // Check if user already exists in THIS specific company (not globally)
+    const existingUserInCompany = await this.prisma.user.findFirst({
+      where: {
+        authId,
+        companyId: dto.companyId,
+      },
+    });
+
+    if (existingUserInCompany) {
+      throw new ConflictException('Ya eres miembro de esta empresa');
     }
 
     // Check for existing pending request

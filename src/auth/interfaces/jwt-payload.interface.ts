@@ -1,4 +1,4 @@
-import type { UserRole } from '@prisma/client';
+import type { UserRole, RelationType } from '@prisma/client';
 
 export interface JwtPayload {
   sub: string; // User ID (from users table)
@@ -6,4 +6,5 @@ export interface JwtPayload {
   email: string;
   companyId: string; // Company ID
   role: UserRole; // OWNER | ADMIN | WORKER | AUDITOR
+  relationType: RelationType; // EMPLOYEE | CONTRACTOR | GUEST
 }
