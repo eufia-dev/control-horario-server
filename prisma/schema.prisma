@@ -57,7 +57,7 @@ model User {
   phone     String?
   avatarUrl String? @map("avatar_url")
 
-  hourlyCost Decimal @map("hourly_cost") @db.Decimal(8, 2)
+  hourlyCost Decimal @default(10) @map("hourly_cost") @db.Decimal(8, 2)
   isActive   Boolean @default(true) @map("is_active")
 
   relationType RelationType @default(EMPLOYEE) @map("relation_type")
