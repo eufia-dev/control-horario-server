@@ -25,11 +25,7 @@ export class SupportService {
       throw new NotFoundException('Usuario no encontrado');
     }
 
-    const severityUpper =
-      bugReport.severity.charAt(0).toUpperCase() + bugReport.severity.slice(1);
-    const categoryUpper =
-      bugReport.category.charAt(0).toUpperCase() + bugReport.category.slice(1);
-    const subject = `[Bug Report] [${severityUpper}] - [${categoryUpper}] - ${bugReport.page}`;
+    const subject = `[Bug Report] - ${bugReport.page}`;
 
     const textLines = [
       'Nuevo reporte de error recibido',
@@ -44,8 +40,6 @@ export class SupportService {
       '--- Detalles del Error ---',
       `Página/URL: ${bugReport.page}`,
       `Fecha y Hora: ${bugReport.occurredAt}`,
-      `Categoría: ${bugReport.category}`,
-      `Severidad: ${bugReport.severity}`,
       '',
       '--- Descripción ---',
       bugReport.description,
@@ -77,8 +71,6 @@ export class SupportService {
       <ul>
         <li><strong>Página/URL:</strong> ${this.escapeHtml(bugReport.page)}</li>
         <li><strong>Fecha y Hora:</strong> ${this.escapeHtml(bugReport.occurredAt)}</li>
-        <li><strong>Categoría:</strong> ${this.escapeHtml(bugReport.category)}</li>
-        <li><strong>Severidad:</strong> ${this.escapeHtml(bugReport.severity)}</li>
       </ul>
       
       <h3>Descripción</h3>

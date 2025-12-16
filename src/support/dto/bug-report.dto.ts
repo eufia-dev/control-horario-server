@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsOptional, IsIn } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional } from 'class-validator';
 
 export class BugReportDto {
   @IsString()
@@ -8,16 +8,6 @@ export class BugReportDto {
   @IsString()
   @IsNotEmpty()
   occurredAt: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @IsIn(['ui', 'functionality', 'performance', 'data', 'other'])
-  category: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @IsIn(['low', 'medium', 'high', 'critical'])
-  severity: string;
 
   @IsString()
   @IsNotEmpty()
