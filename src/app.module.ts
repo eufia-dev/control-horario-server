@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { PrismaModule } from './prisma/prisma.module.js';
@@ -19,9 +20,11 @@ import { AbsencesModule } from './absences/absences.module.js';
 import { CalendarModule } from './calendar/calendar.module.js';
 import { LocationsModule } from './locations/locations.module.js';
 import { WorkSchedulesModule } from './work-schedules/work-schedules.module.js';
+import { RemindersModule } from './reminders/reminders.module.js';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     PrismaModule,
     SupabaseModule,
     AuthModule,
@@ -40,6 +43,7 @@ import { WorkSchedulesModule } from './work-schedules/work-schedules.module.js';
     CalendarModule,
     LocationsModule,
     WorkSchedulesModule,
+    RemindersModule,
   ],
   controllers: [AppController],
   providers: [AppService],
