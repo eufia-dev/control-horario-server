@@ -7,8 +7,9 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { HolidaysService } from '../holidays/holidays.service.js';
+import { SupabaseService } from '../supabase/supabase.service.js';
 import { CreateCompanyDto, RequestJoinDto } from './dto/index.js';
-import type { UserRole } from '@prisma/client';
+import type { RelationType, User, UserRole } from '@prisma/client';
 import { randomBytes } from 'crypto';
 
 export interface OnboardingStatus {
@@ -20,6 +21,7 @@ export interface OnboardingStatus {
     companyId: string;
     companyName: string;
     role: UserRole;
+    relationType: RelationType;
   };
   pendingInvitations?: {
     id: string;
@@ -42,6 +44,7 @@ export class OnboardingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly holidaysService: HolidaysService,
+    private readonly supabaseService: SupabaseService,
   ) {}
 
   /**
@@ -64,6 +67,7 @@ export class OnboardingService {
           companyId: existingUser.companyId,
           companyName: existingUser.company.name,
           role: existingUser.role,
+          relationType: existingUser.relationType,
         },
       };
     }
@@ -164,11 +168,41 @@ export class OnboardingService {
       // Create default work schedule: Mon-Fri 09:00-17:00
       await tx.workSchedule.createMany({
         data: [
-          { companyId: company.id, userId: null, dayOfWeek: 0, startTime: '09:00', endTime: '17:00' }, // Monday
-          { companyId: company.id, userId: null, dayOfWeek: 1, startTime: '09:00', endTime: '17:00' }, // Tuesday
-          { companyId: company.id, userId: null, dayOfWeek: 2, startTime: '09:00', endTime: '17:00' }, // Wednesday
-          { companyId: company.id, userId: null, dayOfWeek: 3, startTime: '09:00', endTime: '17:00' }, // Thursday
-          { companyId: company.id, userId: null, dayOfWeek: 4, startTime: '09:00', endTime: '17:00' }, // Friday
+          {
+            companyId: company.id,
+            userId: null,
+            dayOfWeek: 0,
+            startTime: '09:00',
+            endTime: '17:00',
+          }, // Monday
+          {
+            companyId: company.id,
+            userId: null,
+            dayOfWeek: 1,
+            startTime: '09:00',
+            endTime: '17:00',
+          }, // Tuesday
+          {
+            companyId: company.id,
+            userId: null,
+            dayOfWeek: 2,
+            startTime: '09:00',
+            endTime: '17:00',
+          }, // Wednesday
+          {
+            companyId: company.id,
+            userId: null,
+            dayOfWeek: 3,
+            startTime: '09:00',
+            endTime: '17:00',
+          }, // Thursday
+          {
+            companyId: company.id,
+            userId: null,
+            dayOfWeek: 4,
+            startTime: '09:00',
+            endTime: '17:00',
+          }, // Friday
         ],
       });
 
@@ -211,6 +245,7 @@ export class OnboardingService {
         companyId: result.company.id,
         companyName: result.company.name,
         role: result.user.role,
+        relationType: result.user.relationType,
       },
     };
   }
@@ -247,31 +282,60 @@ export class OnboardingService {
       throw new BadRequestException('El email no coincide con la invitación');
     }
 
-    // Check if user already exists in THIS specific company (not globally)
-    const existingUserInCompany = await this.prisma.user.findFirst({
+    // Check if user already exists in THIS specific company (not globally) and is active
+    const existingActiveUserInCompany = await this.prisma.user.findFirst({
       where: {
         authId,
         companyId: invitation.companyId,
+        isActive: true,
+        deletedAt: null,
       },
     });
 
-    if (existingUserInCompany) {
+    if (existingActiveUserInCompany) {
       throw new ConflictException('Ya eres miembro de esta empresa');
     }
 
-    // Create user profile and mark invitation as used
+    // Check if there's a deleted/inactive user with this email in this company
+    const deletedUserInCompany = await this.prisma.user.findFirst({
+      where: {
+        email: email.toLowerCase(),
+        companyId: invitation.companyId,
+        OR: [{ isActive: false }, { deletedAt: { not: null } }],
+      },
+    });
+
+    // Create or reactivate user profile and mark invitation as used
     const result = await this.prisma.$transaction(async (tx) => {
-      const user = await tx.user.create({
-        data: {
-          authId,
-          email: email.toLowerCase(),
-          name: userName,
-          companyId: invitation.companyId,
-          role: invitation.role,
-          relationType: invitation.relationType,
-          hourlyCost: 0,
-        },
-      });
+      let user;
+
+      if (deletedUserInCompany) {
+        user = await tx.user.update({
+          where: { id: deletedUserInCompany.id },
+          data: {
+            authId,
+            email: email.toLowerCase(),
+            name: userName,
+            role: invitation.role,
+            relationType: invitation.relationType,
+            isActive: true,
+            deletedAt: null,
+            updatedAt: new Date(),
+          },
+        });
+      } else {
+        user = await tx.user.create({
+          data: {
+            authId,
+            email: email.toLowerCase(),
+            name: userName,
+            companyId: invitation.companyId,
+            role: invitation.role,
+            relationType: invitation.relationType,
+            hourlyCost: 0,
+          },
+        });
+      }
 
       await tx.companyInvitation.update({
         where: { id: invitation.id },
@@ -291,7 +355,7 @@ export class OnboardingService {
         },
       });
 
-      return { user, company: invitation.company };
+      return { user: user as User, company: invitation.company };
     });
 
     return {
@@ -303,6 +367,7 @@ export class OnboardingService {
         companyId: result.company.id,
         companyName: result.company.name,
         role: result.user.role,
+        relationType: result.user.relationType,
       },
     };
   }
@@ -310,6 +375,7 @@ export class OnboardingService {
   /**
    * Request to join a company.
    * Supports multi-tenancy: allows existing users to request joining additional companies.
+   * Also allows previously deleted users to request rejoining.
    */
   async requestJoin(
     authId: string,
@@ -325,15 +391,31 @@ export class OnboardingService {
       throw new NotFoundException('Empresa no encontrada');
     }
 
-    // Check if user already exists in THIS specific company (not globally)
-    const existingUserInCompany = await this.prisma.user.findFirst({
+    // Check if user already exists in THIS specific company and is active (not deleted)
+    const existingActiveUserInCompany = await this.prisma.user.findFirst({
       where: {
         authId,
         companyId: dto.companyId,
+        isActive: true,
+        deletedAt: null,
       },
     });
 
-    if (existingUserInCompany) {
+    if (existingActiveUserInCompany) {
+      throw new ConflictException('Ya eres miembro de esta empresa');
+    }
+
+    // Also check by email for active users (in case authId is different but same email)
+    const existingActiveUserByEmail = await this.prisma.user.findFirst({
+      where: {
+        email: email.toLowerCase(),
+        companyId: dto.companyId,
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+
+    if (existingActiveUserByEmail) {
       throw new ConflictException('Ya eres miembro de esta empresa');
     }
 

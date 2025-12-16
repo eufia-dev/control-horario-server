@@ -40,4 +40,3 @@ export class UpdateWorkScheduleDto {
   @Type(() => WorkScheduleDayDto)
   days: WorkScheduleDayDto[];
 }
-

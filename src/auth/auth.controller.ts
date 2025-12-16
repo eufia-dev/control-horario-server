@@ -9,20 +9,17 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import type { Request } from 'express';
-import { AuthService, type ProfileInfo, type PendingInvitation } from './auth.service.js';
+import {
+  AuthService,
+  type ProfileInfo,
+  type PendingInvitation,
+} from './auth.service.js';
 import { JwtAuthGuard, type RequestWithUser } from './jwt-auth.guard.js';
-import type { JwtPayload } from './interfaces/jwt-payload.interface.js';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  /**
-   * Get current authenticated user profile
-   * Authentication is handled by Supabase on the frontend
-   * This endpoint validates the token and returns user data
-   */
   @UseGuards(JwtAuthGuard)
   @Get('me')
   async me(@Req() req: RequestWithUser) {
@@ -30,14 +27,11 @@ export class AuthController {
     return { user };
   }
 
-  /**
-   * GET /auth/profiles
-   * Get all profiles (company memberships) for the authenticated Supabase user
-   * Used for multi-tenancy: allows user to see and switch between companies
-   */
   @UseGuards(JwtAuthGuard)
   @Get('profiles')
-  async getProfiles(@Req() req: RequestWithUser): Promise<{ profiles: ProfileInfo[]; currentProfileId: string }> {
+  async getProfiles(
+    @Req() req: RequestWithUser,
+  ): Promise<{ profiles: ProfileInfo[]; currentProfileId: string }> {
     const profiles = await this.authService.getAllProfiles(req.user.authId);
     return {
       profiles,
@@ -45,12 +39,6 @@ export class AuthController {
     };
   }
 
-  /**
-   * POST /auth/switch-profile
-   * Switch to a different profile (company membership)
-   * Validates that the profileId belongs to the authenticated user's authId
-   * Returns the new profile info for the frontend to update its state
-   */
   @UseGuards(JwtAuthGuard)
   @Post('switch-profile')
   async switchProfile(
@@ -74,11 +62,6 @@ export class AuthController {
     return { profile: targetProfile };
   }
 
-  /**
-   * GET /auth/pending-invitations
-   * Get pending invitations for the authenticated user's email
-   * Used for multi-tenancy: shows invitations to join other companies
-   */
   @UseGuards(JwtAuthGuard)
   @Get('pending-invitations')
   async getPendingInvitations(
@@ -91,11 +74,6 @@ export class AuthController {
     return { invitations };
   }
 
-  /**
-   * POST /auth/accept-invitation/:token
-   * Accept an invitation to join a new company (for authenticated users)
-   * Creates a new profile in the invited company
-   */
   @UseGuards(JwtAuthGuard)
   @Post('accept-invitation/:token')
   async acceptInvitation(
@@ -115,11 +93,6 @@ export class AuthController {
     return { profile };
   }
 
-  /**
-   * POST /auth/request-join
-   * Request to join a company by invite code (for authenticated users)
-   * Creates a join request that company admins can approve
-   */
   @UseGuards(JwtAuthGuard)
   @Post('request-join')
   async requestJoinCompany(
@@ -141,10 +114,6 @@ export class AuthController {
     );
   }
 
-  /**
-   * Logout endpoint - client should clear Supabase session
-   * This endpoint can be used for any server-side cleanup if needed
-   */
   @UseGuards(JwtAuthGuard)
   @Post('logout')
   logout() {

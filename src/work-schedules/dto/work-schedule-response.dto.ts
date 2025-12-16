@@ -7,4 +7,3 @@ export interface WorkScheduleDayResponse {
 export interface WorkScheduleResponse {
   days: WorkScheduleDayResponse[];
 }
-

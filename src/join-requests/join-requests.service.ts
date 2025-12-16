@@ -5,7 +5,12 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ApproveRequestDto } from './dto/index.js';
-import { JoinRequestStatus, UserRole, RelationType } from '@prisma/client';
+import {
+  JoinRequestStatus,
+  UserRole,
+  RelationType,
+  User,
+} from '@prisma/client';
 
 export interface JoinRequestResponse {
   id: string;
@@ -86,7 +91,8 @@ export class JoinRequestsService {
   }
 
   /**
-   * Approve a join request and create user
+   * Approve a join request and create/reactivate user
+   * Handles the case where a previously deleted user is rejoining the company
    */
   async approve(
     id: string,
@@ -106,20 +112,48 @@ export class JoinRequestsService {
       throw new BadRequestException('Esta solicitud ya ha sido procesada');
     }
 
-    // Create user and update request in transaction
+    // Check if there's a deleted/inactive user with this email in this company
+    const deletedUserInCompany = await this.prisma.user.findFirst({
+      where: {
+        email: request.email.toLowerCase(),
+        companyId,
+        OR: [{ isActive: false }, { deletedAt: { not: null } }],
+      },
+    });
+
+    // Create or reactivate user and update request in transaction
     const result = await this.prisma.$transaction(async (tx) => {
-      // Create the user
-      const user = await tx.user.create({
-        data: {
-          authId: request.authId,
-          email: request.email,
-          name: request.name,
-          companyId,
-          role: dto.role || 'WORKER',
-          relationType: dto.relationType || 'EMPLOYEE',
-          hourlyCost: 0,
-        },
-      });
+      let user;
+
+      if (deletedUserInCompany) {
+        // Reactivate existing user: update with new authId and details
+        user = await tx.user.update({
+          where: { id: deletedUserInCompany.id },
+          data: {
+            authId: request.authId,
+            email: request.email.toLowerCase(),
+            name: request.name,
+            role: dto.role || 'WORKER',
+            relationType: dto.relationType || 'EMPLOYEE',
+            isActive: true,
+            deletedAt: null,
+            updatedAt: new Date(),
+          },
+        });
+      } else {
+        // Create new user
+        user = await tx.user.create({
+          data: {
+            authId: request.authId,
+            email: request.email,
+            name: request.name,
+            companyId,
+            role: dto.role || 'WORKER',
+            relationType: dto.relationType || 'EMPLOYEE',
+            hourlyCost: 0,
+          },
+        });
+      }
 
       // Update the request
       const updatedRequest = await tx.joinRequest.update({
@@ -131,7 +165,7 @@ export class JoinRequestsService {
         },
       });
 
-      // NEW: Mark any pending invitations for this email/company as used
+      // Mark any pending invitations for this email/company as used
       await tx.companyInvitation.updateMany({
         where: {
           email: request.email.toLowerCase(),
@@ -143,7 +177,7 @@ export class JoinRequestsService {
         },
       });
 
-      return { request: updatedRequest, user };
+      return { request: updatedRequest, user: user as User };
     });
 
     return {

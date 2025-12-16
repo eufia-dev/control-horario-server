@@ -3,6 +3,7 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateInvitationDto } from './dto/index.js';
@@ -33,6 +34,8 @@ export interface InvitationResponse {
 
 @Injectable()
 export class InvitationsService {
+  private readonly logger = new Logger(InvitationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService,
@@ -47,11 +50,13 @@ export class InvitationsService {
   ): Promise<InvitationResponse> {
     const email = dto.email.toLowerCase();
 
-    // Check if user already exists in this company
+    // Check if user already exists in this company and is active (not deleted)
     const existingUser = await this.prisma.user.findFirst({
       where: {
         email,
         companyId,
+        isActive: true,
+        deletedAt: null,
       },
     });
 
@@ -97,12 +102,26 @@ export class InvitationsService {
         select: { name: true },
       });
 
-      await this.sendInviteEmail(created, company?.name ?? 'tu empresa');
-
-      return created;
+      return {
+        invitation: created,
+        companyName: company?.name ?? 'tu empresa',
+      };
     });
 
-    return this.toResponse(invitation);
+    try {
+      await this.sendInviteEmail(invitation.invitation, invitation.companyName);
+    } catch (error) {
+      await this.prisma.companyInvitation.delete({
+        where: { id: invitation.invitation.id },
+      });
+
+      this.logger.error(error as Error);
+      throw new InternalServerErrorException(
+        'No se pudo enviar el correo de invitación. Por favor, inténtalo de nuevo.',
+      );
+    }
+
+    return this.toResponse(invitation.invitation);
   }
 
   /**

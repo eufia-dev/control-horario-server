@@ -36,9 +36,7 @@ export class WorkSchedulesService {
   /**
    * Convert WorkSchedule array to response format
    */
-  private schedulesToResponse(
-    schedules: WorkSchedule[],
-  ): WorkScheduleResponse {
+  private schedulesToResponse(schedules: WorkSchedule[]): WorkScheduleResponse {
     const days: WorkScheduleDayResponse[] = schedules
       .map((s) => ({
         dayOfWeek: s.dayOfWeek,
@@ -53,9 +51,7 @@ export class WorkSchedulesService {
   /**
    * Get company default schedule
    */
-  async getCompanyDefault(
-    companyId: string,
-  ): Promise<WorkScheduleResponse> {
+  async getCompanyDefault(companyId: string): Promise<WorkScheduleResponse> {
     const schedules = await this.prisma.workSchedule.findMany({
       where: {
         companyId,
@@ -360,4 +356,3 @@ export class WorkSchedulesService {
     });
   }
 }
-

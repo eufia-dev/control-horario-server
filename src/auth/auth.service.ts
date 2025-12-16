@@ -127,7 +127,9 @@ export class AuthService {
     if (!appUser) {
       // If profileId was provided but not found, it's an invalid profile
       if (profileId) {
-        throw new UnauthorizedException('Perfil no válido o no pertenece a este usuario');
+        throw new UnauthorizedException(
+          'Perfil no válido o no pertenece a este usuario',
+        );
       }
       throw new OnboardingRequiredError(supabaseUser.id, supabaseUser.email);
     }

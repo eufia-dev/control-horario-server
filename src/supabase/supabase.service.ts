@@ -74,4 +74,32 @@ export class SupabaseService {
       );
     }
   }
+
+  async createUser(params: {
+    email: string;
+    password?: string;
+    emailConfirm?: boolean;
+    user_metadata?: Record<string, unknown>;
+  }): Promise<{ id: string; email: string }> {
+    const { data, error } = await this.adminClient.auth.admin.createUser({
+      email: params.email,
+      password: params.password,
+      email_confirm: params.emailConfirm ?? true,
+      user_metadata: params.user_metadata,
+    });
+
+    if (error || !data.user) {
+      this.logger.error(
+        `Error al crear usuario de Supabase: ${error?.message}`,
+      );
+      throw new InternalServerErrorException(
+        'Error al crear el usuario de autenticación',
+      );
+    }
+
+    return {
+      id: data.user.id,
+      email: data.user.email ?? params.email,
+    };
+  }
 }
