@@ -126,7 +126,7 @@ model NotificationSettings {
   userId String @unique @map("user_id") @db.Uuid
 
   enableReminders  Boolean       @default(true) @map("enable_reminders")
-  channel          NotifyChannel @default(WHATSAPP)
+  channel          NotifyChannel @default(EMAIL)
   toleranceMinutes Int           @default(15) @map("tolerance_minutes")
 
   user User @relation(fields: [userId], references: [id])
