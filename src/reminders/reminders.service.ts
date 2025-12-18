@@ -45,13 +45,13 @@ export class RemindersService {
 
     this.logger.log('Checking schedule reminders...');
     // Convert JS getDay() (0=Sunday..6=Saturday) to work schedule format (0=Monday..6=Sunday)
-    const currentDayOfWeek = (now.getDay() + 6) % 7;
+    const currentDayOfWeek = (now.getUTCDate() + 6) % 7;
 
     // Normalize today for date comparisons
     const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
+    todayStart.setUTCHours(0, 0, 0, 0);
     const todayEnd = new Date(now);
-    todayEnd.setHours(23, 59, 59, 999);
+    todayEnd.setUTCHours(23, 59, 59, 999);
 
     // 1. Check if today is a national public holiday - if yes, skip all reminders
     const nationalHoliday = await this.prisma.publicHoliday.findFirst({
@@ -331,9 +331,9 @@ export class RemindersService {
 
     // Normalize today to start of day for date comparison
     const todayStart = new Date(today);
-    todayStart.setHours(0, 0, 0, 0);
+    todayStart.setUTCHours(0, 0, 0, 0);
     const todayEnd = new Date(today);
-    todayEnd.setHours(23, 59, 59, 999);
+    todayEnd.setUTCHours(23, 59, 59, 999);
 
     // Fetch company locations and holidays in parallel
     const [companyLocations, exactDateHolidays, recurringHolidays] =
@@ -384,14 +384,13 @@ export class RemindersService {
 
     // Add companies with recurring holidays that match today's month/day
 
-    // check this
-    const todayMonth = today.getMonth();
-    const todayDate = today.getDate();
+    const todayMonth = today.getUTCMonth();
+    const todayDate = today.getUTCDate();
     recurringHolidays.forEach((holiday) => {
       const holidayDate = new Date(holiday.date);
       if (
-        holidayDate.getMonth() === todayMonth &&
-        holidayDate.getDate() === todayDate
+        holidayDate.getUTCMonth() === todayMonth &&
+        holidayDate.getUTCDate() === todayDate
       ) {
         companiesWithHolidays.add(holiday.companyId);
       }
@@ -437,9 +436,9 @@ export class RemindersService {
 
     // Normalize today to start of day for date comparison
     const todayStart = new Date(today);
-    todayStart.setHours(0, 0, 0, 0);
+    todayStart.setUTCHours(0, 0, 0, 0);
     const todayEnd = new Date(today);
-    todayEnd.setHours(23, 59, 59, 999);
+    todayEnd.setUTCHours(23, 59, 59, 999);
 
     // Find absences that overlap with today (only APPROVED absences)
     const absences = await this.prisma.userAbsence.findMany({
@@ -465,10 +464,10 @@ export class RemindersService {
     now: Date,
   ): Promise<boolean> {
     const startOfDay = new Date(now);
-    startOfDay.setHours(0, 0, 0, 0);
+    startOfDay.setUTCHours(0, 0, 0, 0);
 
     const endOfDay = new Date(now);
-    endOfDay.setHours(23, 59, 59, 999);
+    endOfDay.setUTCHours(23, 59, 59, 999);
 
     const count = await this.prisma.timeEntry.count({
       where: {
@@ -489,7 +488,7 @@ export class RemindersService {
   private getDateFromTimeString(timeString: string, referenceDate: Date): Date {
     const [hours, minutes] = timeString.split(':').map(Number);
     const date = new Date(referenceDate);
-    date.setHours(hours, minutes, 0, 0);
+    date.setUTCHours(hours, minutes, 0, 0);
     return date;
   }
 
