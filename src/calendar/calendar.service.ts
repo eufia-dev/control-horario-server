@@ -344,9 +344,6 @@ export class CalendarService {
     return { status: 'WORKED' };
   }
 
-  /**
-   * Calculate summary statistics from calendar days
-   */
   private calculateSummary(days: CalendarDay[]): CalendarSummary {
     let workingDays = 0;
     let daysWorked = 0;
@@ -370,11 +367,7 @@ export class CalendarService {
           publicHolidays++;
           break;
         case 'ABSENCE':
-          // Only count as absence day if it's actually a workday
-          // (status is ABSENCE only when there's a schedule, so it's a workday)
           absenceDays++;
-          workingDays++;
-          totalExpectedMinutes += day.expectedMinutes;
           break;
         case 'WORKED':
         case 'PARTIALLY_WORKED':
