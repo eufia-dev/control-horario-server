@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   Injectable,
   UnauthorizedException,
+  Logger,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { SupabaseService } from '../supabase/supabase.service.js';
@@ -22,6 +23,7 @@ interface RequestWithOnboarding extends Request {
  */
 @Injectable()
 export class OnboardingGuard implements CanActivate {
+  private readonly logger = new Logger(OnboardingGuard.name);
   constructor(private readonly supabase: SupabaseService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -65,7 +67,7 @@ export class OnboardingGuard implements CanActivate {
       if (error instanceof UnauthorizedException) {
         throw error;
       }
-      console.error('Error in OnboardingGuard:', error);
+      this.logger.error('Error in OnboardingGuard:', error);
       throw new UnauthorizedException('Token inválido o expirado');
     }
   }

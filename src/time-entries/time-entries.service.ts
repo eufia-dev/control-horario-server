@@ -562,6 +562,38 @@ export class TimeEntriesService {
   }
 
   // ============================================
+  // CALENDAR METHODS
+  // ============================================
+
+  /**
+   * Get time entries for a date range (used by calendar)
+   */
+  async getTimeEntriesInRange(
+    companyId: string,
+    userId: string,
+    from: Date,
+    to: Date,
+  ): Promise<
+    (TimeEntry & {
+      project: { id: string; name: string } | null;
+    })[]
+  > {
+    return this.prisma.timeEntry.findMany({
+      where: {
+        userId,
+        companyId,
+        startTime: { gte: from, lte: to },
+      },
+      include: {
+        project: {
+          select: { id: true, name: true },
+        },
+      },
+      orderBy: { startTime: 'asc' },
+    });
+  }
+
+  // ============================================
   // SHARED PRIVATE METHODS
   // ============================================
 

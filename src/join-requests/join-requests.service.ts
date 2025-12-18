@@ -123,7 +123,7 @@ export class JoinRequestsService {
 
     // Create or reactivate user and update request in transaction
     const result = await this.prisma.$transaction(async (tx) => {
-      let user;
+      let user: User | null = null;
 
       if (deletedUserInCompany) {
         // Reactivate existing user: update with new authId and details
@@ -140,6 +140,16 @@ export class JoinRequestsService {
             updatedAt: new Date(),
           },
         });
+
+        if (!user) {
+          throw new Error('Failed to reactivate user');
+        }
+
+        await tx.notificationSettings.upsert({
+          where: { userId: user.id },
+          update: {},
+          create: { userId: user.id },
+        });
       } else {
         // Create new user
         user = await tx.user.create({
@@ -152,6 +162,11 @@ export class JoinRequestsService {
             relationType: dto.relationType || 'EMPLOYEE',
             hourlyCost: 0,
           },
+        });
+
+        // Create default notification settings for the new user
+        await tx.notificationSettings.create({
+          data: { userId: user.id },
         });
       }
 
@@ -177,7 +192,7 @@ export class JoinRequestsService {
         },
       });
 
-      return { request: updatedRequest, user: user as User };
+      return { request: updatedRequest, user };
     });
 
     return {

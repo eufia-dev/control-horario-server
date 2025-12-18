@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   Injectable,
   UnauthorizedException,
+  Logger,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthService, OnboardingRequiredError } from './auth.service.js';
@@ -14,6 +15,7 @@ export interface RequestWithUser extends Request {
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
+  private readonly logger = new Logger(JwtAuthGuard.name);
   constructor(private readonly authService: AuthService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -59,7 +61,7 @@ export class JwtAuthGuard implements CanActivate {
       if (error instanceof UnauthorizedException) {
         throw error;
       }
-      console.error('Error in JwtAuthGuard:', error);
+      this.logger.error('Error in JwtAuthGuard:', error);
       throw new UnauthorizedException('Token inválido o expirado');
     }
   }

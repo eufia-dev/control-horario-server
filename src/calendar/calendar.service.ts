@@ -2,6 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { HolidaysService } from '../holidays/holidays.service.js';
 import { AbsencesService } from '../absences/absences.service.js';
+import { TimeEntriesService } from '../time-entries/time-entries.service.js';
+import { WorkSchedulesService } from '../work-schedules/work-schedules.service.js';
 import type {
   CalendarDay,
   CalendarSummary,
@@ -23,35 +25,19 @@ export class CalendarService {
     private readonly prisma: PrismaService,
     private readonly holidaysService: HolidaysService,
     private readonly absencesService: AbsencesService,
+    private readonly timeEntriesService: TimeEntriesService,
+    private readonly workSchedulesService: WorkSchedulesService,
   ) {}
 
-  private formatLocalDateKey(date: Date): string {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-
-  /**
-   * ISO-style weekday index used by this API:
-   * 0 = Monday, 1 = Tuesday, ... 5 = Saturday, 6 = Sunday
-   */
-  private getIsoDayOfWeek(date: Date): number {
-    // JS getDay(): 0=Sunday..6=Saturday
-    // Convert to ISO-like index: Monday=0..Sunday=6
-    return (date.getDay() + 6) % 7;
-  }
-
-  /**
-   * Get calendar with computed day statuses for a user
-   */
   async getCalendar(
     companyId: string,
     userId: string,
-    from: Date,
-    to: Date,
+    from: string,
+    to: string,
   ): Promise<CalendarResponse> {
-    // Fetch user + location in parallel (location is needed for public holidays)
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+
     const [user, location] = await Promise.all([
       this.prisma.user.findFirst({
         where: { id: userId, companyId },
@@ -65,36 +51,39 @@ export class CalendarService {
       throw new NotFoundException('Usuario no encontrado');
     }
 
+    const schedulesPromise = this.workSchedulesService.getWorkSchedules(
+      companyId,
+      userId,
+    );
+
     const publicHolidaysPromise = location
       ? this.holidaysService.getPublicHolidaysInRange(
           location.regionCode,
-          from,
-          to,
+          fromDate,
+          toDate,
         )
       : Promise.resolve([]);
 
-    const schedulesPromise = this.getWorkSchedules(companyId, userId);
     const companyHolidaysPromise =
-      this.holidaysService.getCompanyHolidaysInRange(companyId, from, to);
+      this.holidaysService.getCompanyHolidaysInRange(
+        companyId,
+        fromDate,
+        toDate,
+      );
+
     const absencesPromise = this.absencesService.getAbsencesInRange(
       companyId,
       userId,
-      from,
-      to,
+      fromDate,
+      toDate,
     );
-    const timeEntriesPromise = this.prisma.timeEntry.findMany({
-      where: {
-        userId,
-        companyId,
-        startTime: { gte: from, lte: to },
-      },
-      include: {
-        project: {
-          select: { id: true, name: true },
-        },
-      },
-      orderBy: { startTime: 'asc' },
-    });
+
+    const timeEntriesPromise = this.timeEntriesService.getTimeEntriesInRange(
+      companyId,
+      userId,
+      fromDate,
+      toDate,
+    );
 
     // Everything below is independent, so resolve simultaneously
     const [schedules, publicHolidays, companyHolidays, absences, timeEntries] =
@@ -108,8 +97,8 @@ export class CalendarService {
 
     // Build calendar days
     const days = this.buildCalendarDays(
-      from,
-      to,
+      fromDate,
+      toDate,
       schedules,
       publicHolidays,
       companyHolidays,
@@ -124,50 +113,11 @@ export class CalendarService {
     return {
       userId: user.id,
       userName: user.name,
-      from: this.formatLocalDateKey(from),
-      to: this.formatLocalDateKey(to),
+      from: from,
+      to: to,
       days,
       summary,
     };
-  }
-
-  /**
-   * Get work schedules for a user (merges company defaults with user overrides per day)
-   */
-  private async getWorkSchedules(
-    companyId: string,
-    userId: string,
-  ): Promise<WorkSchedule[]> {
-    // Load both defaults and overrides in parallel
-    const [defaults, overrides] = await Promise.all([
-      this.prisma.workSchedule.findMany({
-        where: { companyId, userId: null },
-      }),
-      this.prisma.workSchedule.findMany({
-        where: { companyId, userId },
-      }),
-    ]);
-
-    // Merge: override wins if present for a day, otherwise use default
-    const overrideMap = new Map<number, WorkSchedule>();
-    overrides.forEach((o) => overrideMap.set(o.dayOfWeek, o));
-
-    const effective: WorkSchedule[] = [];
-
-    // Start with defaults, but replace with override if exists
-    defaults.forEach((d) => {
-      const override = overrideMap.get(d.dayOfWeek);
-      effective.push(override || d);
-    });
-
-    // Also include overrides for days not in defaults
-    overrides.forEach((o) => {
-      if (!defaults.some((d) => d.dayOfWeek === o.dayOfWeek)) {
-        effective.push(o);
-      }
-    });
-
-    return effective;
   }
 
   /**
@@ -186,23 +136,17 @@ export class CalendarService {
     userCreatedAt: Date,
   ): CalendarDay[] {
     const days: CalendarDay[] = [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    // Normalize userCreatedAt to start of day for comparison
-    const userCreatedDate = new Date(userCreatedAt);
-    userCreatedDate.setHours(0, 0, 0, 0);
 
     // Create maps for quick lookup
     const publicHolidayMap = new Map<string, PublicHoliday>();
     publicHolidays.forEach((h) => {
-      const dateKey = this.formatLocalDateKey(h.date);
+      const dateKey = h.date.toISOString().split('T')[0];
       publicHolidayMap.set(dateKey, h);
     });
 
     const companyHolidayMap = new Map<string, CompanyHoliday>();
     companyHolidays.forEach((h) => {
-      const dateKey = this.formatLocalDateKey(h.date);
+      const dateKey = h.date.toISOString().split('T')[0];
       companyHolidayMap.set(dateKey, h);
     });
 
@@ -218,47 +162,36 @@ export class CalendarService {
       (TimeEntry & { project: { id: string; name: string } | null })[]
     >();
     timeEntries.forEach((e) => {
-      const dateKey = this.formatLocalDateKey(e.startTime);
+      const dateKey = e.startTime.toISOString().split('T')[0];
       const existing = entriesByDate.get(dateKey) || [];
       existing.push(e);
       entriesByDate.set(dateKey, existing);
     });
 
-    // Iterate through each day in range
     const currentDate = new Date(from);
-    currentDate.setHours(0, 0, 0, 0);
     while (currentDate <= to) {
-      const dateKey = this.formatLocalDateKey(currentDate);
-      const dayOfWeek = this.getIsoDayOfWeek(currentDate); // 0 = Monday ... 6 = Sunday (local)
+      const dateKey = currentDate.toISOString().split('T')[0];
+      const dayOfWeek = (currentDate.getUTCDay() + 6) % 7; // 0 = Monday ... 6 = Sunday
       const schedule = scheduleMap.get(dayOfWeek);
 
-      // Check if this date is a public holiday
       const publicHoliday = publicHolidayMap.get(dateKey);
-
-      // Check if this date is a company holiday
       const companyHoliday = companyHolidayMap.get(dateKey);
-
-      // Check if this date falls within an absence
       const absence = absences.find(
         (a) => currentDate >= a.startDate && currentDate <= a.endDate,
       );
 
-      // Get time entries for this date
       const dayEntries = entriesByDate.get(dateKey) || [];
       const loggedMinutes = dayEntries.reduce(
         (sum, e) => sum + e.durationMinutes,
         0,
       );
 
-      // Calculate expected minutes from schedule
       const expectedMinutes = this.calculateExpectedMinutes(schedule);
 
-      // Determine day status
       const { status, holidayName, absenceType, isOvertime } =
         this.determineStatus(
           currentDate,
-          today,
-          userCreatedDate,
+          userCreatedAt,
           publicHoliday,
           companyHoliday,
           absence,
@@ -267,7 +200,6 @@ export class CalendarService {
           expectedMinutes,
         );
 
-      // Build time entry briefs
       const entryBriefs: TimeEntryBrief[] = dayEntries.map((e) => ({
         id: e.id,
         startTime: e.startTime,
@@ -290,22 +222,17 @@ export class CalendarService {
         isOvertime,
       });
 
-      // Move to next day
-      currentDate.setDate(currentDate.getDate() + 1);
+      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
     }
 
     return days;
   }
 
-  /**
-   * Calculate expected work minutes from a schedule
-   */
   private calculateExpectedMinutes(schedule?: WorkSchedule): number {
     if (!schedule) {
       return 0;
     }
 
-    // Parse time strings (format: "HH:mm")
     const [startHour, startMin] = schedule.startTime.split(':').map(Number);
     const [endHour, endMin] = schedule.endTime.split(':').map(Number);
 
@@ -320,8 +247,7 @@ export class CalendarService {
    */
   private determineStatus(
     date: Date,
-    today: Date,
-    userCreatedDate: Date,
+    userCreatedAt: Date,
     publicHoliday: PublicHoliday | undefined,
     companyHoliday: CompanyHoliday | undefined,
     absence: UserAbsence | undefined,
@@ -334,8 +260,9 @@ export class CalendarService {
     absenceType?: UserAbsence['type'];
     isOvertime?: boolean;
   } {
-    // Days before user was created - no logs expected
-    if (date < userCreatedDate) {
+    const today = new Date();
+
+    if (date < userCreatedAt) {
       return { status: 'BEFORE_USER_CREATED' };
     }
 
@@ -354,11 +281,16 @@ export class CalendarService {
           holidayName: companyHoliday.name,
         };
       }
-      if (absence) {
+      // Only show absence if it's a workday (has schedule)
+      if (absence && schedule && expectedMinutes > 0) {
         return {
           status: 'ABSENCE',
           absenceType: absence.type,
         };
+      }
+      // Non-working day takes precedence over absence for future dates
+      if (!schedule || expectedMinutes === 0) {
+        return { status: 'FUTURE' };
       }
       return { status: 'FUTURE' };
     }
@@ -381,19 +313,20 @@ export class CalendarService {
       };
     }
 
-    // Absence
-    if (absence) {
+    // Non-working day (no schedule for this day of week)
+    // Non-working days take precedence over absences
+    if (!schedule || expectedMinutes === 0) {
       return {
-        status: 'ABSENCE',
-        absenceType: absence.type,
+        status: 'NON_WORKING_DAY',
         isOvertime: loggedMinutes > 0,
       };
     }
 
-    // Non-working day (no schedule for this day of week)
-    if (!schedule || expectedMinutes === 0) {
+    // Absence (only if it's a workday)
+    if (absence) {
       return {
-        status: 'NON_WORKING_DAY',
+        status: 'ABSENCE',
+        absenceType: absence.type,
         isOvertime: loggedMinutes > 0,
       };
     }
@@ -437,7 +370,11 @@ export class CalendarService {
           publicHolidays++;
           break;
         case 'ABSENCE':
+          // Only count as absence day if it's actually a workday
+          // (status is ABSENCE only when there's a schedule, so it's a workday)
           absenceDays++;
+          workingDays++;
+          totalExpectedMinutes += day.expectedMinutes;
           break;
         case 'WORKED':
         case 'PARTIALLY_WORKED':
@@ -451,7 +388,7 @@ export class CalendarService {
           totalExpectedMinutes += day.expectedMinutes;
           break;
         case 'NON_WORKING_DAY':
-          // Don't count towards working days
+          // Don't count towards working days or absence days
           break;
       }
     }

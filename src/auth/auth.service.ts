@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
   UnauthorizedException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SupabaseService } from '../supabase/supabase.service.js';
@@ -71,6 +72,7 @@ export class OnboardingRequiredError extends UnauthorizedException {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly supabase: SupabaseService,
@@ -87,7 +89,7 @@ export class AuthService {
     } = await this.supabase.getAdminClient().auth.getUser(accessToken);
 
     if (error || !supabaseUser) {
-      console.error('Error validating token:', error);
+      this.logger.error('Error validating token:', error);
       throw new UnauthorizedException('Token inválido o expirado');
     }
 

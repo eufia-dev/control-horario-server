@@ -66,33 +66,30 @@ export class WorkSchedulesService {
   }
 
   /**
-   * Get effective schedule for a user (merges defaults with overrides)
+   * Get work schedules for a user (merges company defaults with user overrides per day)
+   * Returns raw WorkSchedule array
    */
-  async getEffectiveSchedule(
+  async getWorkSchedules(
     companyId: string,
     userId: string,
-  ): Promise<WorkScheduleResponse> {
-    // Load both defaults and overrides
+  ): Promise<WorkSchedule[]> {
+    // Load both defaults and overrides in parallel
     const [defaults, overrides] = await Promise.all([
       this.prisma.workSchedule.findMany({
-        where: {
-          companyId,
-          userId: null,
-        },
+        where: { companyId, userId: null },
       }),
       this.prisma.workSchedule.findMany({
-        where: {
-          companyId,
-          userId,
-        },
+        where: { companyId, userId },
       }),
     ]);
 
-    // Merge: override wins if present, otherwise use default
+    // Merge: override wins if present for a day, otherwise use default
     const overrideMap = new Map<number, WorkSchedule>();
     overrides.forEach((o) => overrideMap.set(o.dayOfWeek, o));
 
     const effective: WorkSchedule[] = [];
+
+    // Start with defaults, but replace with override if exists
     defaults.forEach((d) => {
       const override = overrideMap.get(d.dayOfWeek);
       effective.push(override || d);
@@ -105,6 +102,17 @@ export class WorkSchedulesService {
       }
     });
 
+    return effective;
+  }
+
+  /**
+   * Get effective schedule for a user (merges defaults with overrides)
+   */
+  async getEffectiveSchedule(
+    companyId: string,
+    userId: string,
+  ): Promise<WorkScheduleResponse> {
+    const effective = await this.getWorkSchedules(companyId, userId);
     return this.schedulesToResponse(effective);
   }
 

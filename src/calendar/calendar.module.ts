@@ -1,12 +1,18 @@
 import { Module } from '@nestjs/common';
-import { PrismaModule } from '../prisma/prisma.module.js';
 import { HolidaysModule } from '../holidays/holidays.module.js';
 import { AbsencesModule } from '../absences/absences.module.js';
+import { TimeEntriesModule } from '../time-entries/time-entries.module.js';
+import { WorkSchedulesModule } from '../work-schedules/work-schedules.module.js';
 import { CalendarController } from './calendar.controller.js';
 import { CalendarService } from './calendar.service.js';
 
 @Module({
-  imports: [PrismaModule, HolidaysModule, AbsencesModule],
+  imports: [
+    HolidaysModule,
+    AbsencesModule,
+    TimeEntriesModule,
+    WorkSchedulesModule,
+  ],
   controllers: [CalendarController],
   providers: [CalendarService],
   exports: [CalendarService],

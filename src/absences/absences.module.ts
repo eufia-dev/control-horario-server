@@ -1,10 +1,10 @@
-import { Module } from '@nestjs/common';
-import { PrismaModule } from '../prisma/prisma.module.js';
+import { Module, forwardRef } from '@nestjs/common';
 import { AbsencesController } from './absences.controller.js';
 import { AbsencesService } from './absences.service.js';
+import { HolidaysModule } from '../holidays/holidays.module.js';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [forwardRef(() => HolidaysModule)],
   controllers: [AbsencesController],
   providers: [AbsencesService],
   exports: [AbsencesService],

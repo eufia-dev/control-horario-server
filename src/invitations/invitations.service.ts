@@ -83,7 +83,7 @@ export class InvitationsService {
     // Generate unique token and set expiry (7 days)
     const token = this.generateToken();
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
+    expiresAt.setUTCDate(expiresAt.getUTCDate() + 7);
 
     const invitation = await this.prisma.$transaction(async (tx) => {
       const created = await tx.companyInvitation.create({
@@ -109,7 +109,13 @@ export class InvitationsService {
     });
 
     try {
-      await this.sendInviteEmail(invitation.invitation, invitation.companyName);
+      await this.emailService.sendInviteEmail({
+        to: invitation.invitation.email,
+        companyName: invitation.companyName,
+        token: invitation.invitation.token,
+        role: invitation.invitation.role,
+        expiresAt: invitation.invitation.expiresAt,
+      });
     } catch (error) {
       await this.prisma.companyInvitation.delete({
         where: { id: invitation.invitation.id },
@@ -185,7 +191,7 @@ export class InvitationsService {
       // Generate new token and extend expiry
       const token = this.generateToken();
       const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 7);
+      expiresAt.setUTCDate(expiresAt.getUTCDate() + 7);
 
       const updatedInvitation = await tx.companyInvitation.update({
         where: { id },
@@ -197,51 +203,18 @@ export class InvitationsService {
         select: { name: true },
       });
 
-      await this.sendInviteEmail(
-        updatedInvitation,
-        company?.name ?? 'tu empresa',
-      );
+      await this.emailService.sendInviteEmail({
+        to: updatedInvitation.email,
+        companyName: company?.name ?? 'tu empresa',
+        token: updatedInvitation.token,
+        role: updatedInvitation.role,
+        expiresAt: updatedInvitation.expiresAt,
+      });
 
       return updatedInvitation;
     });
 
     return this.toResponse(updated);
-  }
-
-  private getInviteBaseUrl(): string {
-    const base = process.env.INVITE_BASE_URL || process.env.FRONTEND_ORIGIN;
-
-    if (!base) {
-      throw new InternalServerErrorException(
-        'No está configurada la URL base para las invitaciones. Contacta con el administrador.',
-      );
-    }
-
-    return base.replace(/\/$/, '');
-  }
-
-  private buildInviteLink(token: string): string {
-    return `${this.getInviteBaseUrl()}/invite/${token}`;
-  }
-
-  private async sendInviteEmail(
-    invitation: {
-      email: string;
-      token: string;
-      role: UserRole;
-      expiresAt: Date;
-    },
-    companyName: string,
-  ): Promise<void> {
-    const inviteLink = this.buildInviteLink(invitation.token);
-
-    await this.emailService.sendInviteEmail({
-      to: invitation.email,
-      companyName,
-      inviteLink,
-      role: invitation.role,
-      expiresAt: invitation.expiresAt,
-    });
   }
 
   getOptions(): InvitationOptionsResponse {

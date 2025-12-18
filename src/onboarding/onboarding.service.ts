@@ -217,6 +217,11 @@ export class OnboardingService {
         },
       });
 
+      // Create default notification settings for the user
+      await tx.notificationSettings.create({
+        data: { userId: user.id },
+      });
+
       return { company, user };
     });
 
@@ -307,7 +312,7 @@ export class OnboardingService {
 
     // Create or reactivate user profile and mark invitation as used
     const result = await this.prisma.$transaction(async (tx) => {
-      let user;
+      let user: User | null = null;
 
       if (deletedUserInCompany) {
         user = await tx.user.update({
@@ -323,6 +328,17 @@ export class OnboardingService {
             updatedAt: new Date(),
           },
         });
+
+        if (!user) {
+          throw new Error('Failed to reactivate user');
+        }
+
+        // Ensure notification settings exist (create if not present)
+        await tx.notificationSettings.upsert({
+          where: { userId: user.id },
+          update: {},
+          create: { userId: user.id },
+        });
       } else {
         user = await tx.user.create({
           data: {
@@ -334,6 +350,11 @@ export class OnboardingService {
             relationType: invitation.relationType,
             hourlyCost: 0,
           },
+        });
+
+        // Create default notification settings for the new user
+        await tx.notificationSettings.create({
+          data: { userId: user.id },
         });
       }
 
@@ -355,7 +376,7 @@ export class OnboardingService {
         },
       });
 
-      return { user: user as User, company: invitation.company };
+      return { user, company: invitation.company };
     });
 
     return {

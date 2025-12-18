@@ -3,6 +3,8 @@ import {
   Logger,
   NotFoundException,
   ConflictException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { NagerDateService } from './nager-date.service.js';
@@ -12,6 +14,8 @@ import type {
   CompanyHoliday,
   HolidaySource,
 } from '@prisma/client';
+import type { AbsencesService } from '../absences/absences.service.js';
+import { AbsencesService as AbsencesServiceClass } from '../absences/absences.service.js';
 
 export interface HolidayResponse {
   id: string;
@@ -45,6 +49,8 @@ export class HolidaysService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly nagerDateService: NagerDateService,
+    @Inject(forwardRef(() => AbsencesServiceClass))
+    private readonly absencesService: AbsencesService,
   ) {}
 
   /**
@@ -295,11 +301,8 @@ export class HolidaysService {
       where: { companyId },
     });
 
-    if (!location) {
-      return false;
-    }
+    if (!location) return false;
 
-    // Check public holidays
     const publicHoliday = await this.prisma.publicHoliday.findFirst({
       where: {
         date,
@@ -308,41 +311,38 @@ export class HolidaysService {
       },
     });
 
-    if (publicHoliday) {
-      return true;
-    }
+    if (publicHoliday) return true;
 
-    // Check company holidays
-    const companyHoliday = await this.prisma.companyHoliday.findFirst({
+    const companyHolidays = await this.prisma.companyHoliday.findMany({
       where: {
         companyId,
-        OR: [
-          { date },
-          {
-            isRecurring: true,
-            date: {
-              // Match day and month regardless of year
-              gte: new Date(
-                date.getFullYear(),
-                date.getMonth(),
-                date.getDate(),
-              ),
-              lt: new Date(
-                date.getFullYear(),
-                date.getMonth(),
-                date.getDate() + 1,
-              ),
-            },
-          },
-        ],
+        OR: [{ date }, { isRecurring: true }],
       },
     });
 
-    return !!companyHoliday;
+    const isCompanyHoliday = companyHolidays.some((holiday) => {
+      if (
+        holiday.date.toISOString().split('T')[0] ===
+        date.toISOString().split('T')[0]
+      )
+        return true;
+
+      if (holiday.isRecurring) {
+        return (
+          holiday.date.getUTCMonth() === date.getUTCMonth() &&
+          holiday.date.getUTCDate() === date.getUTCDate()
+        );
+      }
+
+      return false;
+    });
+
+    return isCompanyHoliday;
   }
 
   /**
    * Create a custom company holiday
+   * After creating, rechecks absences to ensure they still have workdays
    */
   async createCompanyHoliday(
     companyId: string,
@@ -375,6 +375,14 @@ export class HolidaysService {
       },
     });
 
+    // Recheck absences for the company to ensure they still have workdays
+    // This is done asynchronously to avoid blocking the response
+    this.absencesService.recheckAbsencesForCompany(companyId).catch((error) => {
+      this.logger.error(
+        `Error rechecking absences after creating holiday: ${error}`,
+      );
+    });
+
     return this.toCompanyHolidayResponse(holiday);
   }
 
@@ -398,6 +406,14 @@ export class HolidaysService {
 
     await this.prisma.companyHoliday.delete({
       where: { id: holidayId },
+    });
+
+    // Recheck absences for the company to ensure they still have workdays
+    // This is done asynchronously to avoid blocking the response
+    this.absencesService.recheckAbsencesForCompany(companyId).catch((error) => {
+      this.logger.error(
+        `Error rechecking absences after creating holiday: ${error}`,
+      );
     });
 
     return this.toCompanyHolidayResponse(holiday);

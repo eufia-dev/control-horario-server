@@ -79,7 +79,7 @@ model User {
   reviewedAbsences UserAbsence[]  @relation("AbsenceReviewer")
 
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime? @updatedAt @map("updated_at")
+  updatedAt DateTime? @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
 
   @@unique([companyId, email])
@@ -159,7 +159,7 @@ model Project {
   activeTimers   ActiveTimer[]
   financialItems ProjectFinancialItem[]
 
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@map("projects")
 }
@@ -189,7 +189,7 @@ model ProjectFinancialItem {
 
   project Project @relation(fields: [projectId], references: [id])
 
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@map("project_financial_items")
 }
@@ -260,7 +260,7 @@ model TimeEntry {
   project   Project?   @relation(fields: [projectId], references: [id])
   auditLogs AuditLog[]
 
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@index([userId, startTime])
   @@map("time_entries")
@@ -294,7 +294,7 @@ model AuditLog {
   timeEntry TimeEntry @relation(fields: [timeEntryId], references: [id])
   actor     User      @relation("Actor", fields: [actorId], references: [id])
 
-  timestamp DateTime @default(now())
+  timestamp DateTime @default(now()) @db.Timestamptz(6)
 
   @@map("audit_logs")
 }
@@ -312,7 +312,7 @@ model ExternalWorker {
   company       Company         @relation(fields: [companyId], references: [id])
   externalHours ExternalHours[]
 
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@map("external_workers")
 }
@@ -331,7 +331,7 @@ model ExternalHours {
   project        Project        @relation(fields: [projectId], references: [id])
   company        Company        @relation(fields: [companyId], references: [id])
 
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@map("external_hours")
 }
@@ -425,7 +425,7 @@ model PublicHoliday {
 
   source HolidaySource @default(API)
 
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@unique([date, country, regionCode])
   @@index([year, country])
@@ -450,7 +450,7 @@ model CompanyHoliday {
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@unique([companyId, date])
   @@map("company_holidays")
@@ -467,6 +467,8 @@ model UserAbsence {
   startDate DateTime @map("start_date") @db.Date
   endDate   DateTime @map("end_date") @db.Date
   type      AbsenceType
+
+  workdaysCount Int @default(0) @map("workdays_count")
 
   status       AbsenceStatus @default(PENDING)
   notes        String?

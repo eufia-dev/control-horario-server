@@ -2,11 +2,15 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  forwardRef,
+  Inject,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { CreateAbsenceDto } from './dto/create-absence.dto.js';
 import type { ReviewAbsenceDto } from './dto/review-absence.dto.js';
 import { AbsenceType, AbsenceStatus, type UserAbsence } from '@prisma/client';
+import type { HolidaysService } from '../holidays/holidays.service.js';
+import { HolidaysService as HolidaysServiceClass } from '../holidays/holidays.service.js';
 
 export interface AbsenceResponse {
   id: string;
@@ -15,6 +19,7 @@ export interface AbsenceResponse {
   startDate: Date;
   endDate: Date;
   type: AbsenceType;
+  workdaysCount: number;
   status: AbsenceStatus;
   notes: string | null;
   reviewedById: string | null;
@@ -45,7 +50,11 @@ export interface AbsenceStats {
 
 @Injectable()
 export class AbsencesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => HolidaysServiceClass))
+    private readonly holidaysService: HolidaysService,
+  ) {}
 
   /**
    * Get absence type enum values for frontend dropdown
@@ -72,9 +81,6 @@ export class AbsencesService {
   // USER METHODS
   // ============================================
 
-  /**
-   * Request a new absence (creates with PENDING status)
-   */
   async requestAbsence(
     userId: string,
     companyId: string,
@@ -83,24 +89,31 @@ export class AbsencesService {
     const startDate = new Date(dto.startDate);
     const endDate = new Date(dto.endDate);
 
-    // Validate dates
     if (endDate < startDate) {
       throw new BadRequestException(
         'La fecha de fin debe ser posterior a la fecha de inicio',
       );
     }
 
-    // Check for overlapping absences
+    const workdaysInRange = await this.countWorkdaysInRange(
+      userId,
+      companyId,
+      startDate,
+      endDate,
+    );
+
+    if (workdaysInRange === 0) {
+      throw new BadRequestException(
+        'El rango de fechas seleccionado no incluye ningún día laborable. Verifica que las fechas no sean fines de semana sin horario o días festivos.',
+      );
+    }
+
     const overlapping = await this.prisma.userAbsence.findFirst({
       where: {
         userId,
         status: { in: ['PENDING', 'APPROVED'] },
-        OR: [
-          {
-            startDate: { lte: endDate },
-            endDate: { gte: startDate },
-          },
-        ],
+        startDate: { lte: startDate },
+        endDate: { gte: endDate },
       },
     });
 
@@ -114,9 +127,10 @@ export class AbsencesService {
       data: {
         userId,
         companyId,
-        startDate,
-        endDate,
+        startDate: startDate,
+        endDate: endDate,
         type: dto.type,
+        workdaysCount: workdaysInRange,
         notes: dto.notes || null,
         status: 'PENDING',
       },
@@ -130,9 +144,6 @@ export class AbsencesService {
     return this.toAbsenceResponse(absence);
   }
 
-  /**
-   * Get current user's absences
-   */
   async getMyAbsences(
     userId: string,
     companyId: string,
@@ -158,9 +169,6 @@ export class AbsencesService {
     return absences.map((a) => this.toAbsenceResponse(a));
   }
 
-  /**
-   * Cancel a pending absence (user can only cancel their own pending requests)
-   */
   async cancelAbsence(
     userId: string,
     absenceId: string,
@@ -181,12 +189,6 @@ export class AbsencesService {
       throw new NotFoundException('Ausencia no encontrada');
     }
 
-    if (absence.status !== 'PENDING') {
-      throw new BadRequestException(
-        'Solo se pueden cancelar ausencias pendientes',
-      );
-    }
-
     const updated = await this.prisma.userAbsence.update({
       where: { id: absenceId },
       data: { status: 'CANCELLED' },
@@ -204,9 +206,6 @@ export class AbsencesService {
   // ADMIN METHODS
   // ============================================
 
-  /**
-   * Get all company absences (for admin/manager view)
-   */
   async getAllAbsences(
     companyId: string,
     status?: AbsenceStatus,
@@ -232,9 +231,6 @@ export class AbsencesService {
     return absences.map((a) => this.toAbsenceResponse(a));
   }
 
-  /**
-   * Get a single absence by ID
-   */
   async getAbsenceById(
     absenceId: string,
     companyId: string,
@@ -261,9 +257,6 @@ export class AbsencesService {
     return this.toAbsenceResponse(absence);
   }
 
-  /**
-   * Review (approve/reject) an absence request
-   */
   async reviewAbsence(
     absenceId: string,
     reviewerId: string,
@@ -313,9 +306,6 @@ export class AbsencesService {
     return this.toAbsenceResponse(updated);
   }
 
-  /**
-   * Get absence statistics for a company
-   */
   async getAbsenceStats(companyId: string): Promise<AbsenceStats> {
     const counts = await this.prisma.userAbsence.groupBy({
       by: ['status'],
@@ -338,9 +328,6 @@ export class AbsencesService {
     return stats;
   }
 
-  /**
-   * Get absences for a date range (used by calendar)
-   */
   async getAbsencesInRange(
     companyId: string,
     userId: string,
@@ -352,15 +339,107 @@ export class AbsencesService {
         companyId,
         userId,
         status: 'APPROVED',
-        OR: [
-          {
-            startDate: { lte: to },
-            endDate: { gte: from },
-          },
-        ],
+        startDate: { lte: to },
+        endDate: { gte: from },
       },
       orderBy: { startDate: 'asc' },
     });
+  }
+
+  async countWorkdaysInRange(
+    userId: string,
+    companyId: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<number> {
+    let count = 0;
+    const current = new Date(startDate);
+
+    while (current <= endDate) {
+      if (await this.isWorkday(userId, companyId, current)) {
+        count++;
+      }
+      current.setUTCDate(current.getUTCDate() + 1);
+    }
+
+    return count;
+  }
+
+  async isWorkday(
+    userId: string,
+    companyId: string,
+    date: Date,
+  ): Promise<boolean> {
+    const dayOfWeek = (date.getUTCDay() + 6) % 7;
+
+    const userSchedule = await this.prisma.workSchedule.findFirst({
+      where: {
+        companyId,
+        userId,
+        dayOfWeek,
+      },
+    });
+
+    const schedule =
+      userSchedule ||
+      (await this.prisma.workSchedule.findFirst({
+        where: {
+          companyId,
+          userId: null,
+          dayOfWeek,
+        },
+      }));
+
+    if (!schedule) {
+      return false;
+    }
+
+    const isHoliday = await this.holidaysService.isHoliday(companyId, date);
+
+    return !isHoliday;
+  }
+
+  async recheckAbsencesForCompany(companyId: string): Promise<void> {
+    const absences = await this.prisma.userAbsence.findMany({
+      where: {
+        companyId,
+        status: { in: ['PENDING', 'APPROVED'] },
+      },
+      include: {
+        user: {
+          select: { id: true },
+        },
+      },
+    });
+
+    for (const absence of absences) {
+      const workdaysCount = await this.countWorkdaysInRange(
+        absence.userId,
+        companyId,
+        absence.startDate,
+        absence.endDate,
+      );
+
+      if (workdaysCount === 0) {
+        await this.prisma.userAbsence.update({
+          where: { id: absence.id },
+          data: {
+            status: 'CANCELLED',
+            workdaysCount: 0,
+            notes: absence.notes
+              ? `${absence.notes}\n\n[Automático] Cancelada porque ya no incluye días laborables debido a cambios en festivos.`
+              : '[Automático] Cancelada porque ya no incluye días laborables debido a cambios en festivos.',
+          },
+        });
+      } else if (absence.workdaysCount !== workdaysCount) {
+        await this.prisma.userAbsence.update({
+          where: { id: absence.id },
+          data: {
+            workdaysCount,
+          },
+        });
+      }
+    }
   }
 
   private toAbsenceResponse(
@@ -376,6 +455,7 @@ export class AbsencesService {
       startDate: absence.startDate,
       endDate: absence.endDate,
       type: absence.type,
+      workdaysCount: absence.workdaysCount,
       status: absence.status,
       notes: absence.notes,
       reviewedById: absence.reviewedById,

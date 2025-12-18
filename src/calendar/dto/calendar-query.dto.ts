@@ -1,9 +1,8 @@
-import { IsDateString, IsNotEmpty, IsOptional, IsUUID } from 'class-validator';
+import { IsDateString, IsNotEmpty, IsUUID } from 'class-validator';
 
 export class CalendarQueryDto {
   @IsUUID()
-  @IsOptional()
-  userId?: string;
+  userId: string;
 
   @IsDateString()
   @IsNotEmpty()
