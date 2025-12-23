@@ -490,7 +490,7 @@ export class RemindersService {
     const date = new Date(referenceDate);
     // fix this
     // check this
-    date.setHours(hours + 1, minutes, 0, 0); // Add 1 hour to the time
+    date.setHours(hours - 1, minutes, 0, 0); // Add 1 hour to the time
     return date;
   }
 
