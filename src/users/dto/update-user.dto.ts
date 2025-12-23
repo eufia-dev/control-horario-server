@@ -50,5 +50,5 @@ export class UpdateUserDto {
 
   @IsEnum(RelationType)
   @IsOptional()
-  relationType: RelationType;
+  relation: RelationType;
 }

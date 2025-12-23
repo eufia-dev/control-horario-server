@@ -60,8 +60,8 @@ model User {
   hourlyCost Decimal @default(10) @map("hourly_cost") @db.Decimal(8, 2)
   isActive   Boolean @default(true) @map("is_active")
 
-  relationType RelationType @default(EMPLOYEE) @map("relation_type")
-  role         UserRole     @default(WORKER)
+  role     UserRole     @default(WORKER)
+  relation RelationType @default(EMPLOYEE) @map("relation_type")
 
   nif String?
   naf String?
@@ -88,17 +88,17 @@ model User {
   @@map("users")
 }
 
-enum RelationType {
-  EMPLOYEE
-  CONTRACTOR
-  GUEST
-}
-
 enum UserRole {
   OWNER
   ADMIN
   WORKER
   AUDITOR
+}
+
+enum RelationType {
+  EMPLOYEE
+  CONTRACTOR
+  GUEST
 }
 
 // ---------------------------------------------------------
@@ -344,7 +344,7 @@ model CompanyInvitation {
   companyId    String       @map("company_id") @db.Uuid
   email        String       @db.VarChar(320)
   role         UserRole     @default(WORKER)
-  relationType RelationType @default(EMPLOYEE) @map("relation_type")
+  relation RelationType @default(EMPLOYEE) @map("relation_type")
   token        String       @unique @db.VarChar(64)
   expiresAt    DateTime     @map("expires_at") @db.Timestamptz(6)
   usedAt       DateTime?    @map("used_at") @db.Timestamptz(6)

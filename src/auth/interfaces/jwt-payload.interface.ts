@@ -6,5 +6,5 @@ export interface JwtPayload {
   email: string;
   companyId: string; // Company ID
   role: UserRole; // OWNER | ADMIN | WORKER | AUDITOR
-  relationType: RelationType; // EMPLOYEE | CONTRACTOR | GUEST
+  relation: RelationType; // EMPLOYEE | CONTRACTOR | GUEST
 }

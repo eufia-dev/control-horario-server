@@ -7,5 +7,5 @@ export class ApproveRequestDto {
 
   @IsEnum(['EMPLOYEE', 'CONTRACTOR', 'GUEST'])
   @IsOptional()
-  relationType?: 'EMPLOYEE' | 'CONTRACTOR' | 'GUEST' = 'EMPLOYEE';
+  relation?: 'EMPLOYEE' | 'CONTRACTOR' | 'GUEST' = 'EMPLOYEE';
 }

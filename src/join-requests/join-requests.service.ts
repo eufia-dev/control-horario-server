@@ -27,7 +27,7 @@ export interface JoinRequestWithUser extends JoinRequestResponse {
     name: string;
     email: string;
     role: UserRole;
-    relationType: RelationType;
+    relation: RelationType;
   };
 }
 
@@ -134,7 +134,7 @@ export class JoinRequestsService {
             email: request.email.toLowerCase(),
             name: request.name,
             role: dto.role || 'WORKER',
-            relationType: dto.relationType || 'EMPLOYEE',
+            relation: dto.relation || 'EMPLOYEE',
             isActive: true,
             deletedAt: null,
             updatedAt: new Date(),
@@ -159,7 +159,7 @@ export class JoinRequestsService {
             name: request.name,
             companyId,
             role: dto.role || 'WORKER',
-            relationType: dto.relationType || 'EMPLOYEE',
+            relation: dto.relation || 'EMPLOYEE',
             hourlyCost: 0,
           },
         });
@@ -202,7 +202,7 @@ export class JoinRequestsService {
         name: result.user.name,
         email: result.user.email,
         role: result.user.role,
-        relationType: result.user.relationType,
+        relation: result.user.relation,
       },
     };
   }

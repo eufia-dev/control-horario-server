@@ -41,14 +41,14 @@ export class JwtAuthGuard implements CanActivate {
       // If profileId is provided, it will validate that the profile belongs to this authId
       const authUser = await this.authService.validateToken(token, profileId);
 
-      // Attach user payload to request (including relationType for NotGuestGuard)
+      // Attach user payload to request (including relation for NotGuestGuard)
       req.user = {
         sub: authUser.id,
         authId: authUser.authId,
         email: authUser.email,
         companyId: authUser.companyId,
         role: authUser.role,
-        relationType: authUser.relationType,
+        relation: authUser.relation,
       };
 
       return true;

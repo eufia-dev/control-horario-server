@@ -77,6 +77,7 @@ export class RemindersService {
       // Fetch all active users with EMAIL reminders enabled
       this.prisma.user.findMany({
         where: {
+          role: 'WORKER',
           isActive: true,
           deletedAt: null,
           notificationSettings: {

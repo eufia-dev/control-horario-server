@@ -21,7 +21,7 @@ export interface UserResponse {
   hourlyCost: number;
   isActive: boolean;
   role: UserRole;
-  relationType: string;
+  relation: string;
   nif: string | null;
   naf: string | null;
   createdAt: Date;
@@ -146,7 +146,7 @@ export class UsersService {
             : undefined,
           isActive: updateUserDto.isActive,
           role: updateUserDto.role,
-          relationType: updateUserDto.relationType,
+          relation: updateUserDto.relation,
         },
       });
 
@@ -240,7 +240,7 @@ export class UsersService {
       hourlyCost: Number(user.hourlyCost),
       isActive: user.isActive,
       role: user.role,
-      relationType: user.relationType,
+      relation: user.relation,
       nif: user.nif,
       naf: user.naf,
       createdAt: user.createdAt,

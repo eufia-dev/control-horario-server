@@ -25,7 +25,7 @@ export interface InvitationResponse {
   id: string;
   email: string;
   role: UserRole;
-  relationType: RelationType;
+  relation: RelationType;
   token: string;
   expiresAt: Date;
   usedAt: Date | null;
@@ -91,7 +91,7 @@ export class InvitationsService {
           companyId,
           email,
           role: dto.role || 'WORKER',
-          relationType: dto.relationType || 'EMPLOYEE',
+          relation: dto.relation || 'EMPLOYEE',
           token,
           expiresAt,
         },
@@ -252,7 +252,7 @@ export class InvitationsService {
     id: string;
     email: string;
     role: UserRole;
-    relationType: RelationType;
+    relation: RelationType;
     token: string;
     expiresAt: Date;
     usedAt: Date | null;
@@ -262,7 +262,7 @@ export class InvitationsService {
       id: invitation.id,
       email: invitation.email,
       role: invitation.role,
-      relationType: invitation.relationType,
+      relation: invitation.relation,
       token: invitation.token,
       expiresAt: invitation.expiresAt,
       usedAt: invitation.usedAt,

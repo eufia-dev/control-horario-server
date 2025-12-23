@@ -21,7 +21,7 @@ export interface OnboardingStatus {
     companyId: string;
     companyName: string;
     role: UserRole;
-    relationType: RelationType;
+    relation: RelationType;
   };
   pendingInvitations?: {
     id: string;
@@ -67,7 +67,7 @@ export class OnboardingService {
           companyId: existingUser.companyId,
           companyName: existingUser.company.name,
           role: existingUser.role,
-          relationType: existingUser.relationType,
+          relation: existingUser.relation,
         },
       };
     }
@@ -250,7 +250,7 @@ export class OnboardingService {
         companyId: result.company.id,
         companyName: result.company.name,
         role: result.user.role,
-        relationType: result.user.relationType,
+        relation: result.user.relation,
       },
     };
   }
@@ -322,7 +322,7 @@ export class OnboardingService {
             email: email.toLowerCase(),
             name: userName,
             role: invitation.role,
-            relationType: invitation.relationType,
+            relation: invitation.relation,
             isActive: true,
             deletedAt: null,
             updatedAt: new Date(),
@@ -347,7 +347,7 @@ export class OnboardingService {
             name: userName,
             companyId: invitation.companyId,
             role: invitation.role,
-            relationType: invitation.relationType,
+            relation: invitation.relation,
             hourlyCost: 0,
           },
         });
@@ -388,7 +388,7 @@ export class OnboardingService {
         companyId: result.company.id,
         companyName: result.company.name,
         role: result.user.role,
-        relationType: result.user.relationType,
+        relation: result.user.relation,
       },
     };
   }

@@ -23,7 +23,7 @@ export class NotGuestGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest<RequestWithUser>();
 
-    if (req.user?.relationType === 'GUEST') {
+    if (req.user?.relation === 'GUEST') {
       throw new ForbiddenException(
         'Los usuarios invitados no pueden realizar esta acción',
       );

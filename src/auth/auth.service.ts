@@ -18,7 +18,7 @@ export interface AuthUser {
   companyId: string;
   companyName: string;
   role: UserRole;
-  relationType: RelationType;
+  relation: RelationType;
   isActive: boolean;
   createdAt: Date;
 }
@@ -28,7 +28,7 @@ export interface ProfileInfo {
   name: string;
   email: string;
   role: UserRole;
-  relationType: RelationType;
+  relation: RelationType;
   company: {
     id: string;
     name: string;
@@ -45,7 +45,7 @@ export interface PendingInvitation {
   id: string;
   token: string;
   role: UserRole;
-  relationType: RelationType;
+  relation: RelationType;
   expiresAt: Date;
   company: {
     id: string;
@@ -171,7 +171,7 @@ export class AuthService {
       name: user.name,
       email: user.email,
       role: user.role,
-      relationType: user.relationType,
+      relation: user.relation,
       company: {
         id: user.company.id,
         name: user.company.name,
@@ -259,7 +259,7 @@ export class AuthService {
       id: inv.id,
       token: inv.token,
       role: inv.role,
-      relationType: inv.relationType,
+      relation: inv.relation,
       expiresAt: inv.expiresAt,
       company: inv.company,
     }));
@@ -324,7 +324,7 @@ export class AuthService {
           name: userName,
           companyId: invitation.companyId,
           role: invitation.role,
-          relationType: invitation.relationType,
+          relation: invitation.relation,
           hourlyCost: 0,
         },
       });
@@ -355,7 +355,7 @@ export class AuthService {
       name: result.name,
       email: result.email,
       role: result.role,
-      relationType: result.relationType,
+      relation: result.relation,
       company: {
         id: invitation.company.id,
         name: invitation.company.name,
@@ -439,7 +439,7 @@ export class AuthService {
     email: string;
     companyId: string;
     role: UserRole;
-    relationType: RelationType;
+    relation: RelationType;
     isActive: boolean;
     createdAt: Date;
     company?: { name: string } | null;
@@ -452,7 +452,7 @@ export class AuthService {
       companyId: user.companyId,
       companyName: user.company?.name ?? '',
       role: user.role,
-      relationType: user.relationType,
+      relation: user.relation,
       isActive: user.isActive,
       createdAt: user.createdAt,
     };
