@@ -45,7 +45,7 @@ export class RemindersService {
 
     this.logger.log('Checking schedule reminders...');
     // Convert JS getDay() (0=Sunday..6=Saturday) to work schedule format (0=Monday..6=Sunday)
-    const currentDayOfWeek = (now.getUTCDate() + 6) % 7;
+    const currentDayOfWeek = (now.getUTCDay() + 6) % 7;
 
     // Normalize today for date comparisons
     const todayStart = new Date(now);
@@ -488,7 +488,9 @@ export class RemindersService {
   private getDateFromTimeString(timeString: string, referenceDate: Date): Date {
     const [hours, minutes] = timeString.split(':').map(Number);
     const date = new Date(referenceDate);
-    date.setHours(hours, minutes, 0, 0);
+    // fix this
+    // check this
+    date.setHours(hours + 1, minutes, 0, 0); // Add 1 hour to the time
     return date;
   }
 
