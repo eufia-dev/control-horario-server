@@ -13,8 +13,6 @@ import type {
 export class RemindersService {
   private readonly logger = new Logger(RemindersService.name);
 
-  // Track sent reminders: "userId:type" (e.g., "abc123:start")
-  // Cleared daily to avoid memory buildup
   private sentReminders = new Set<string>();
   private lastClearDate = '';
 
@@ -256,7 +254,7 @@ export class RemindersService {
         this.logger.log(`Sending start reminder to ${user.email}`);
 
         try {
-          await this.emailService.sendReminderEmail({
+          await this.emailService.sendCheckInReminderEmail({
             to: user.email,
             userName: user.name,
             type: 'start',
@@ -283,7 +281,7 @@ export class RemindersService {
         this.logger.log(`Sending end reminder to ${user.email}`);
 
         try {
-          await this.emailService.sendReminderEmail({
+          await this.emailService.sendCheckInReminderEmail({
             to: user.email,
             userName: user.name,
             type: 'end',
@@ -509,5 +507,88 @@ export class RemindersService {
   private markReminderSent(userId: string, type: 'start' | 'end'): void {
     const key = `${userId}:${type}`;
     this.sentReminders.add(key);
+  }
+
+  /**
+   * Check for long-running timers (>24 hours) and send reminders every 24 hours
+   * Runs hourly to check for timers that need reminders
+   * Sends a reminder when timer duration falls within a 24-hour window (24-25h, 48-49h, etc.)
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async handleLongRunningTimerReminders() {
+    const remindersEnabled = process.env.ENABLE_REMINDERS !== 'false';
+    if (!remindersEnabled) {
+      this.logger.debug(
+        'Reminders are disabled via ENABLE_REMINDERS environment variable',
+      );
+      return;
+    }
+
+    this.logger.log('Checking for long-running timers...');
+
+    const now = new Date();
+    const twentyFourHoursMs = 24 * 60 * 60 * 1000;
+    const oneHourMs = 60 * 60 * 1000;
+
+    // Fetch all active timers with user information
+    const activeTimers = await this.prisma.activeTimer.findMany({
+      include: {
+        user: {
+          include: {
+            notificationSettings: true,
+          },
+        },
+      },
+    });
+
+    if (activeTimers.length === 0) {
+      this.logger.debug('No active timers found');
+      return;
+    }
+
+    // Check each active timer
+    for (const timer of activeTimers) {
+      // Only send to users with EMAIL reminders enabled
+      if (
+        !timer.user.notificationSettings?.enableReminders ||
+        timer.user.notificationSettings.channel !== 'EMAIL'
+      ) {
+        continue;
+      }
+
+      const timerDurationMs = now.getTime() - timer.startTime.getTime();
+      const timerDurationHours = timerDurationMs / oneHourMs;
+
+      // Only send reminders if timer has been running for more than 24 hours
+      if (timerDurationMs < twentyFourHoursMs) {
+        continue;
+      }
+
+      // Check if timer duration falls within a 24-hour window (24-25h, 48-49h, 72-73h, etc.)
+      // This ensures we send one reminder per 24-hour period
+      const hoursSinceLast24HourMark = timerDurationHours % 24;
+      const isWithin24HourWindow =
+        hoursSinceLast24HourMark >= 0 && hoursSinceLast24HourMark < 1;
+
+      if (isWithin24HourWindow) {
+        this.logger.log(
+          `Sending long-running timer reminder to ${timer.user.email} (timer running for ${timerDurationHours.toFixed(1)} hours)`,
+        );
+
+        try {
+          await this.emailService.sendLongRunningTimerReminder({
+            to: timer.user.email,
+            userName: timer.user.name,
+            timerDurationHours,
+          });
+        } catch (error: unknown) {
+          const message =
+            error instanceof Error ? error.message : JSON.stringify(error);
+          this.logger.error(
+            `Failed to send long-running timer reminder to ${timer.user.email}: ${message}`,
+          );
+        }
+      }
+    }
   }
 }

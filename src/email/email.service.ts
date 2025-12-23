@@ -12,11 +12,17 @@ interface InviteEmailPayload {
   expiresAt: Date;
 }
 
-interface ReminderEmailPayload {
+interface CheckInReminderEmailPayload {
   to: string;
   userName: string;
   type: 'start' | 'end';
   scheduledTime: string;
+}
+
+interface RunningTimerReminderPayload {
+  to: string;
+  userName: string;
+  timerDurationHours: number;
 }
 
 @Injectable()
@@ -108,7 +114,9 @@ export class EmailService {
     }
   }
 
-  async sendReminderEmail(payload: ReminderEmailPayload): Promise<void> {
+  async sendCheckInReminderEmail(
+    payload: CheckInReminderEmailPayload,
+  ): Promise<void> {
     const from = process.env.SMTP_USER ?? '';
     const transporter = this.getTransporter();
 
@@ -123,6 +131,64 @@ export class EmailService {
       payload.type === 'start'
         ? `Según tu horario deberías haber empezado a trabajar a las ${payload.scheduledTime}. No olvides registrar tu entrada.`
         : `Tu jornada terminaba a las ${payload.scheduledTime} y aún tienes un temporizador activo. No olvides registrar tu salida.`;
+
+    const text = [
+      `Hola ${payload.userName},`,
+      message,
+      frontendUrl
+        ? `Accede a la plataforma para gestionar tu tiempo: ${frontendUrl}`
+        : 'Accede a la plataforma para gestionar tu tiempo.',
+      '',
+      'Saludos cordiales,',
+      'Equipo Eufia',
+    ].join('\n');
+
+    const html = `
+      <p>Hola <strong>${payload.userName}</strong>,</p>
+      <p>${message}</p>
+      <p>${
+        frontendUrl
+          ? `<a href="${frontendUrl}">Accede a la plataforma para gestionar tu tiempo</a>.`
+          : 'Accede a la plataforma para gestionar tu tiempo.'
+      }</p>
+      <p>Saludos cordiales,<br/>Equipo Eufia</p>
+    `;
+
+    try {
+      await transporter.sendMail({
+        from,
+        to: payload.to,
+        subject,
+        text,
+        html,
+      });
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : JSON.stringify(error);
+      throw new InternalServerErrorException(
+        `No se pudo enviar el correo de recordatorio. Detalle: ${message}`,
+      );
+    }
+  }
+
+  async sendLongRunningTimerReminder(
+    payload: RunningTimerReminderPayload,
+  ): Promise<void> {
+    const from = process.env.SMTP_USER ?? '';
+    const transporter = this.getTransporter();
+
+    const frontendUrl = process.env.FRONTEND_ORIGIN?.replace(/\/$/, '') || '';
+
+    const subject = 'Recordatorio: Temporizador activo prolongado';
+
+    const hours = Math.floor(payload.timerDurationHours);
+    const minutes = Math.floor((payload.timerDurationHours % 1) * 60);
+    const durationText =
+      hours > 0
+        ? `${hours} ${hours === 1 ? 'hora' : 'horas'}${minutes > 0 ? ` y ${minutes} minutos` : ''}`
+        : `${minutes} minutos`;
+
+    const message = `Tienes un temporizador activo que lleva corriendo ${durationText}. Por favor, verifica que hayas registrado correctamente tu tiempo de trabajo.`;
 
     const text = [
       `Hola ${payload.userName},`,
