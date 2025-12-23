@@ -200,7 +200,20 @@ export class UsersService {
         );
       }
 
-      await this.supabaseService.deleteUser(user.authId);
+      // Check if this authId is used by other active users (multitenancy)
+      const otherActiveUsers = await this.prisma.user.count({
+        where: {
+          authId: user.authId,
+          id: { not: id },
+          deletedAt: null,
+          isActive: true,
+        },
+      });
+
+      // Only delete Supabase auth user if no other active users share this authId
+      if (otherActiveUsers === 0) {
+        await this.supabaseService.deleteUser(user.authId);
+      }
 
       await this.prisma.activeTimer.deleteMany({
         where: { userId: id },
