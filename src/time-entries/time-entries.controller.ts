@@ -21,6 +21,8 @@ import { AdminCreateTimeEntryDto } from './dto/admin-create-time-entry.dto.js';
 import { UpdateTimeEntryDto } from './dto/update-time-entry.dto.js';
 import { StartTimerDto } from './dto/start-timer.dto.js';
 import { SwitchTimerDto } from './dto/switch-timer.dto.js';
+import { GetTimeEntriesQueryDto } from './dto/get-time-entries-query.dto.js';
+import { AdminGetTimeEntriesQueryDto } from './dto/admin-get-time-entries-query.dto.js';
 import {
   DeletedTimeEntryResponse,
   TimeEntryResponse,
@@ -52,10 +54,15 @@ export class TimeEntriesController {
   // ============================================
 
   @Get('me')
-  findMyEntries(@Req() req: RequestWithUser): Promise<TimeEntryResponse[]> {
+  findMyEntries(
+    @Query() query: GetTimeEntriesQueryDto,
+    @Req() req: RequestWithUser,
+  ): Promise<TimeEntryResponse[]> {
     return this.timeEntriesService.findMyEntries(
       req.user.sub,
       req.user.companyId,
+      query.year,
+      query.month,
     );
   }
 
@@ -176,10 +183,15 @@ export class TimeEntriesController {
   @Get()
   @UseGuards(AdminGuard)
   findAll(
+    @Query() query: AdminGetTimeEntriesQueryDto,
     @Req() req: RequestWithUser,
-    @Query('userId') userId?: string,
   ): Promise<TimeEntryResponse[]> {
-    return this.timeEntriesService.findAll(req.user.companyId, userId);
+    return this.timeEntriesService.findAll(
+      req.user.companyId,
+      query.userId,
+      query.year,
+      query.month,
+    );
   }
 
   @Post()

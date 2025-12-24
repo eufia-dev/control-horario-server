@@ -114,11 +114,27 @@ export class TimeEntriesService {
   async findAll(
     companyId: string,
     userId?: string,
+    year?: number,
+    month?: number,
   ): Promise<TimeEntryResponse[]> {
-    const whereClause: { companyId: string; userId?: string } = { companyId };
+    const whereClause: {
+      companyId: string;
+      userId?: string;
+      startTime?: { gte: Date; lte: Date };
+    } = { companyId };
 
     if (userId) {
       whereClause.userId = userId;
+    }
+
+    // Filter by year and month if provided
+    if (year !== undefined && month !== undefined) {
+      const startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
+      const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+      whereClause.startTime = {
+        gte: startDate,
+        lte: endDate,
+      };
     }
 
     const timeEntries = await this.prisma.timeEntry.findMany({
@@ -221,9 +237,24 @@ export class TimeEntriesService {
   async findMyEntries(
     userId: string,
     companyId: string,
+    year: number,
+    month: number,
   ): Promise<TimeEntryResponse[]> {
+    // Create date range for the specified month
+    // month is 0-indexed in JS, so month - 1 for startDate
+    const startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
+    // Get last day of the month: day 0 of next month = last day of current month
+    const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+
     const timeEntries = await this.prisma.timeEntry.findMany({
-      where: { userId, companyId },
+      where: {
+        userId,
+        companyId,
+        startTime: {
+          gte: startDate,
+          lte: endDate,
+        },
+      },
       include: {
         user: {
           select: { id: true, name: true, email: true },
