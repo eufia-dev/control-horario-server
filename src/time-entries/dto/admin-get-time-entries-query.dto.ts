@@ -20,4 +20,3 @@ export class AdminGetTimeEntriesQueryDto {
   @Max(12)
   month?: number;
 }
-

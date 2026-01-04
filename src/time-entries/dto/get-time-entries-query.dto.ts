@@ -16,4 +16,3 @@ export class GetTimeEntriesQueryDto {
   @Max(12)
   month!: number;
 }
-

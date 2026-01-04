@@ -25,6 +25,31 @@ interface RunningTimerReminderPayload {
   timerDurationHours: number;
 }
 
+interface AbsenceRequestNotificationPayload {
+  to: string;
+  adminName: string;
+  userName: string;
+  companyName: string;
+  absenceType: string;
+  startDate: string;
+  endDate: string;
+  workdaysCount: number;
+  notes: string | null;
+  absenceId: string;
+}
+
+interface AbsenceReviewNotificationPayload {
+  to: string;
+  userName: string;
+  companyName: string;
+  absenceType: string;
+  startDate: string;
+  endDate: string;
+  status: 'APPROVED' | 'REJECTED';
+  reviewerName: string;
+  notes: string | null;
+}
+
 @Injectable()
 export class EmailService {
   private transporter?: Transporter<SentMessageInfo>;
@@ -225,6 +250,133 @@ export class EmailService {
         error instanceof Error ? error.message : JSON.stringify(error);
       throw new InternalServerErrorException(
         `No se pudo enviar el correo de recordatorio. Detalle: ${message}`,
+      );
+    }
+  }
+
+  async sendAbsenceRequestNotification(
+    payload: AbsenceRequestNotificationPayload,
+  ): Promise<void> {
+    const from = process.env.SMTP_USER ?? '';
+    const transporter = this.getTransporter();
+
+    const frontendUrl = process.env.FRONTEND_ORIGIN?.replace(/\/$/, '') || '';
+
+    const subject = `Nueva solicitud de ausencia - ${payload.companyName}`;
+
+    const text = [
+      `Hola ${payload.adminName},`,
+      '',
+      `${payload.userName} ha solicitado una ausencia:`,
+      `Tipo: ${payload.absenceType}`,
+      `Fecha de inicio: ${payload.startDate}`,
+      `Fecha de fin: ${payload.endDate}`,
+      `Días laborables: ${payload.workdaysCount}`,
+      ...(payload.notes ? [`Notas: ${payload.notes}`] : []),
+      '',
+      frontendUrl
+        ? `Accede a la plataforma para revisar la solicitud: ${frontendUrl}`
+        : 'Accede a la plataforma para revisar la solicitud.',
+      '',
+      'Saludos cordiales,',
+      'Equipo Eufia',
+    ].join('\n');
+
+    const html = `
+      <p>Hola <strong>${payload.adminName}</strong>,</p>
+      <p><strong>${payload.userName}</strong> ha solicitado una ausencia:</p>
+      <ul>
+        <li><strong>Tipo:</strong> ${payload.absenceType}</li>
+        <li><strong>Fecha de inicio:</strong> ${payload.startDate}</li>
+        <li><strong>Fecha de fin:</strong> ${payload.endDate}</li>
+        <li><strong>Días laborables:</strong> ${payload.workdaysCount}</li>
+        ${payload.notes ? `<li><strong>Notas:</strong> ${payload.notes}</li>` : ''}
+      </ul>
+      <p>${
+        frontendUrl
+          ? `<a href="${frontendUrl}">Accede a la plataforma para revisar la solicitud</a>.`
+          : 'Accede a la plataforma para revisar la solicitud.'
+      }</p>
+      <p>Saludos cordiales,<br/>Equipo Eufia</p>
+    `;
+
+    try {
+      await transporter.sendMail({
+        from,
+        to: payload.to,
+        subject,
+        text,
+        html,
+      });
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : JSON.stringify(error);
+      throw new InternalServerErrorException(
+        `No se pudo enviar el correo de notificación de ausencia. Detalle: ${message}`,
+      );
+    }
+  }
+
+  async sendAbsenceReviewNotification(
+    payload: AbsenceReviewNotificationPayload,
+  ): Promise<void> {
+    const from = process.env.SMTP_USER ?? '';
+    const transporter = this.getTransporter();
+
+    const frontendUrl = process.env.FRONTEND_ORIGIN?.replace(/\/$/, '') || '';
+
+    const statusText = payload.status === 'APPROVED' ? 'aprobada' : 'rechazada';
+    const subject = `Solicitud de ausencia ${statusText} - ${payload.companyName}`;
+
+    const text = [
+      `Hola ${payload.userName},`,
+      '',
+      `Tu solicitud de ausencia ha sido ${statusText}:`,
+      `Tipo: ${payload.absenceType}`,
+      `Fecha de inicio: ${payload.startDate}`,
+      `Fecha de fin: ${payload.endDate}`,
+      `Revisada por: ${payload.reviewerName}`,
+      ...(payload.notes ? [`Notas: ${payload.notes}`] : []),
+      '',
+      frontendUrl
+        ? `Accede a la plataforma para ver más detalles: ${frontendUrl}`
+        : 'Accede a la plataforma para ver más detalles.',
+      '',
+      'Saludos cordiales,',
+      'Equipo Eufia',
+    ].join('\n');
+
+    const html = `
+      <p>Hola <strong>${payload.userName}</strong>,</p>
+      <p>Tu solicitud de ausencia ha sido <strong>${statusText}</strong>:</p>
+      <ul>
+        <li><strong>Tipo:</strong> ${payload.absenceType}</li>
+        <li><strong>Fecha de inicio:</strong> ${payload.startDate}</li>
+        <li><strong>Fecha de fin:</strong> ${payload.endDate}</li>
+        <li><strong>Revisada por:</strong> ${payload.reviewerName}</li>
+        ${payload.notes ? `<li><strong>Notas:</strong> ${payload.notes}</li>` : ''}
+      </ul>
+      <p>${
+        frontendUrl
+          ? `<a href="${frontendUrl}">Accede a la plataforma para ver más detalles</a>.`
+          : 'Accede a la plataforma para ver más detalles.'
+      }</p>
+      <p>Saludos cordiales,<br/>Equipo Eufia</p>
+    `;
+
+    try {
+      await transporter.sendMail({
+        from,
+        to: payload.to,
+        subject,
+        text,
+        html,
+      });
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : JSON.stringify(error);
+      throw new InternalServerErrorException(
+        `No se pudo enviar el correo de notificación de revisión de ausencia. Detalle: ${message}`,
       );
     }
   }

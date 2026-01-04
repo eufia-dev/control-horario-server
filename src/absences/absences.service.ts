@@ -4,6 +4,7 @@ import {
   BadRequestException,
   forwardRef,
   Inject,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { CreateAbsenceDto } from './dto/create-absence.dto.js';
@@ -11,6 +12,7 @@ import type { ReviewAbsenceDto } from './dto/review-absence.dto.js';
 import { AbsenceType, AbsenceStatus, type UserAbsence } from '@prisma/client';
 import type { HolidaysService } from '../holidays/holidays.service.js';
 import { HolidaysService as HolidaysServiceClass } from '../holidays/holidays.service.js';
+import { EmailService } from '../email/email.service.js';
 
 export interface AbsenceResponse {
   id: string;
@@ -50,10 +52,13 @@ export interface AbsenceStats {
 
 @Injectable()
 export class AbsencesService {
+  private readonly logger = new Logger(AbsencesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject(forwardRef(() => HolidaysServiceClass))
     private readonly holidaysService: HolidaysService,
+    private readonly emailService: EmailService,
   ) {}
 
   /**
@@ -75,6 +80,23 @@ export class AbsencesService {
       value,
       name: typeNames[value],
     }));
+  }
+
+  /**
+   * Get absence type name in Spanish
+   */
+  private getAbsenceTypeName(type: AbsenceType): string {
+    const typeNames: Record<AbsenceType, string> = {
+      [AbsenceType.VACATION]: 'Vacaciones',
+      [AbsenceType.SICK_LEAVE]: 'Baja por enfermedad',
+      [AbsenceType.PERSONAL_LEAVE]: 'Asuntos propios',
+      [AbsenceType.MATERNITY]: 'Maternidad',
+      [AbsenceType.PATERNITY]: 'Paternidad',
+      [AbsenceType.UNPAID_LEAVE]: 'Excedencia',
+      [AbsenceType.TRAINING]: 'Formación',
+      [AbsenceType.OTHER]: 'Otro',
+    };
+    return typeNames[type];
   }
 
   // ============================================
@@ -139,6 +161,13 @@ export class AbsencesService {
           select: { id: true, name: true, email: true },
         },
       },
+    });
+
+    // Send email notifications to admins (non-blocking)
+    this.notifyAdminsOfAbsenceRequest(absence).catch((error) => {
+      this.logger.error(
+        `Failed to send absence request notification emails: ${error}`,
+      );
     });
 
     return this.toAbsenceResponse(absence);
@@ -303,6 +332,13 @@ export class AbsencesService {
       },
     });
 
+    // Send email notification to user (non-blocking)
+    this.notifyUserOfAbsenceReview(updated).catch((error) => {
+      this.logger.error(
+        `Failed to send absence review notification email: ${error}`,
+      );
+    });
+
     return this.toAbsenceResponse(updated);
   }
 
@@ -440,6 +476,153 @@ export class AbsencesService {
         });
       }
     }
+  }
+
+  /**
+   * Notify admins of a new absence request
+   */
+  private async notifyAdminsOfAbsenceRequest(
+    absence: UserAbsence & {
+      user: { id: string; name: string; email: string };
+    },
+  ): Promise<void> {
+    if (!absence.user) {
+      this.logger.warn(
+        `Cannot send absence request notification: user data missing for absence ${absence.id}`,
+      );
+      return;
+    }
+
+    // Get company name
+    const company = await this.prisma.company.findUnique({
+      where: { id: absence.companyId },
+      select: { name: true },
+    });
+
+    if (!company) {
+      this.logger.warn(
+        `Cannot send absence request notification: company ${absence.companyId} not found`,
+      );
+      return;
+    }
+
+    // Get all admins (OWNER or ADMIN roles)
+    const admins = await this.prisma.user.findMany({
+      where: {
+        companyId: absence.companyId,
+        role: { in: ['OWNER', 'ADMIN'] },
+        deletedAt: null,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+      },
+    });
+
+    if (admins.length === 0) {
+      this.logger.warn(
+        `No admins found for company ${absence.companyId} to notify about absence request`,
+      );
+      return;
+    }
+
+    const absenceTypeName = this.getAbsenceTypeName(absence.type);
+    const startDateStr = absence.startDate.toLocaleDateString('es-ES', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+    const endDateStr = absence.endDate.toLocaleDateString('es-ES', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+
+    // Send email to each admin
+    const emailPromises = admins.map((admin) =>
+      this.emailService.sendAbsenceRequestNotification({
+        to: admin.email,
+        adminName: admin.name,
+        userName: absence.user.name,
+        companyName: company.name,
+        absenceType: absenceTypeName,
+        startDate: startDateStr,
+        endDate: endDateStr,
+        workdaysCount: absence.workdaysCount,
+        notes: absence.notes,
+        absenceId: absence.id,
+      }),
+    );
+
+    await Promise.allSettled(emailPromises);
+  }
+
+  /**
+   * Notify user of absence review (approved/rejected)
+   */
+  private async notifyUserOfAbsenceReview(
+    absence: UserAbsence & {
+      user: { id: string; name: string; email: string };
+      reviewedBy?: { id: string; name: string } | null;
+    },
+  ): Promise<void> {
+    if (!absence.user) {
+      this.logger.warn(
+        `Cannot send absence review notification: user data missing for absence ${absence.id}`,
+      );
+      return;
+    }
+
+    if (!absence.reviewedBy) {
+      this.logger.warn(
+        `Cannot send absence review notification: reviewer data missing for absence ${absence.id}`,
+      );
+      return;
+    }
+
+    if (absence.status !== 'APPROVED' && absence.status !== 'REJECTED') {
+      // Only send notifications for approved/rejected statuses
+      return;
+    }
+
+    // Get company name
+    const company = await this.prisma.company.findUnique({
+      where: { id: absence.companyId },
+      select: { name: true },
+    });
+
+    if (!company) {
+      this.logger.warn(
+        `Cannot send absence review notification: company ${absence.companyId} not found`,
+      );
+      return;
+    }
+
+    const absenceTypeName = this.getAbsenceTypeName(absence.type);
+    const startDateStr = absence.startDate.toLocaleDateString('es-ES', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+    const endDateStr = absence.endDate.toLocaleDateString('es-ES', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+
+    await this.emailService.sendAbsenceReviewNotification({
+      to: absence.user.email,
+      userName: absence.user.name,
+      companyName: company.name,
+      absenceType: absenceTypeName,
+      startDate: startDateStr,
+      endDate: endDateStr,
+      status: absence.status,
+      reviewerName: absence.reviewedBy.name,
+      notes: absence.notes,
+    });
   }
 
   private toAbsenceResponse(
