@@ -16,7 +16,7 @@ export class AdminGetTimeEntriesQueryDto {
   @Type(() => Number)
   @IsInt()
   @IsOptional()
-  @Min(1)
-  @Max(12)
-  month?: number;
+  @Min(0)
+  @Max(11)
+  month?: number; // 0 = January, 11 = December
 }

@@ -127,10 +127,10 @@ export class TimeEntriesService {
       whereClause.userId = userId;
     }
 
-    // Filter by year and month if provided
+    // Filter by year and month if provided (month is 0-indexed: 0 = January)
     if (year !== undefined && month !== undefined) {
-      const startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
-      const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+      const startDate = new Date(year, month, 1, 0, 0, 0, 0);
+      const endDate = new Date(year, month + 1, 0, 23, 59, 59, 999);
       whereClause.startTime = {
         gte: startDate,
         lte: endDate,
@@ -240,11 +240,10 @@ export class TimeEntriesService {
     year: number,
     month: number,
   ): Promise<TimeEntryResponse[]> {
-    // Create date range for the specified month
-    // month is 0-indexed in JS, so month - 1 for startDate
-    const startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
+    // Create date range for the specified month (month is 0-indexed: 0 = January)
+    const startDate = new Date(year, month, 1, 0, 0, 0, 0);
     // Get last day of the month: day 0 of next month = last day of current month
-    const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+    const endDate = new Date(year, month + 1, 0, 23, 59, 59, 999);
 
     const timeEntries = await this.prisma.timeEntry.findMany({
       where: {

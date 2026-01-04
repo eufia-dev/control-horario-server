@@ -31,6 +31,7 @@ export interface CalendarDay {
   loggedMinutes: number;
   entries: TimeEntryBrief[];
   isOvertime?: boolean; // Worked on a non-working day
+  isOutsideMonth?: boolean; // Padding day from previous/next month (for month-based queries)
 }
 
 export interface CalendarSummary {
@@ -51,4 +52,15 @@ export interface CalendarResponse {
   to: string;
   days: CalendarDay[];
   summary: CalendarSummary;
+}
+
+export interface CalendarMonthResponse {
+  userId: string;
+  userName: string;
+  year: number;
+  month: number;
+  from: string; // Actual display range start (including padding)
+  to: string; // Actual display range end (including padding)
+  days: CalendarDay[];
+  summary: CalendarSummary; // Only counts days within the target month
 }

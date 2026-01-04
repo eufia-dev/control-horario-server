@@ -8,6 +8,7 @@ import type {
   CalendarDay,
   CalendarSummary,
   CalendarResponse,
+  CalendarMonthResponse,
   DayStatus,
   TimeEntryBrief,
 } from './dto/calendar-day.dto.js';
@@ -118,6 +119,249 @@ export class CalendarService {
       days,
       summary,
     };
+  }
+
+  /**
+   * Get calendar data for a specific month, including padding days for display grid
+   * Summary only counts days within the target month
+   */
+  async getCalendarByMonth(
+    companyId: string,
+    userId: string,
+    year: number,
+    month: number,
+  ): Promise<CalendarMonthResponse> {
+    // Calculate display range (including padding days)
+    const { displayFrom, displayTo, monthStart, monthEnd } =
+      this.calculateMonthDisplayRange(year, month);
+
+    const [user, location] = await Promise.all([
+      this.prisma.user.findFirst({
+        where: { id: userId, companyId },
+      }),
+      this.prisma.companyLocation.findUnique({
+        where: { companyId },
+      }),
+    ]);
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    const schedulesPromise = this.workSchedulesService.getWorkSchedules(
+      companyId,
+      userId,
+    );
+
+    const publicHolidaysPromise = location
+      ? this.holidaysService.getPublicHolidaysInRange(
+          location.regionCode,
+          displayFrom,
+          displayTo,
+        )
+      : Promise.resolve([]);
+
+    const companyHolidaysPromise =
+      this.holidaysService.getCompanyHolidaysInRange(
+        companyId,
+        displayFrom,
+        displayTo,
+      );
+
+    const absencesPromise = this.absencesService.getAbsencesInRange(
+      companyId,
+      userId,
+      displayFrom,
+      displayTo,
+    );
+
+    const timeEntriesPromise = this.timeEntriesService.getTimeEntriesInRange(
+      companyId,
+      userId,
+      displayFrom,
+      displayTo,
+    );
+
+    const [schedules, publicHolidays, companyHolidays, absences, timeEntries] =
+      await Promise.all([
+        schedulesPromise,
+        publicHolidaysPromise,
+        companyHolidaysPromise,
+        absencesPromise,
+        timeEntriesPromise,
+      ]);
+
+    // Build calendar days with isOutsideMonth flag
+    const days = this.buildCalendarDaysForMonth(
+      displayFrom,
+      displayTo,
+      monthStart,
+      monthEnd,
+      schedules,
+      publicHolidays,
+      companyHolidays,
+      absences,
+      timeEntries,
+      user.createdAt,
+    );
+
+    // Calculate summary only for days within the target month
+    const monthDays = days.filter((d) => !d.isOutsideMonth);
+    const summary = this.calculateSummary(monthDays);
+
+    return {
+      userId: user.id,
+      userName: user.name,
+      year,
+      month,
+      from: displayFrom.toISOString().split('T')[0],
+      to: displayTo.toISOString().split('T')[0],
+      days,
+      summary,
+    };
+  }
+
+  /**
+   * Calculate the display range for a month grid (Monday to Sunday weeks)
+   */
+  private calculateMonthDisplayRange(
+    year: number,
+    month: number,
+  ): {
+    displayFrom: Date;
+    displayTo: Date;
+    monthStart: Date;
+    monthEnd: Date;
+  } {
+    // Month is 0-indexed (0 = January, 11 = December), same as JS Date constructor
+    const monthStart = new Date(Date.UTC(year, month, 1));
+    const monthEnd = new Date(Date.UTC(year, month + 1, 0)); // Last day of the month
+
+    // Expand to cover full weeks (Mon..Sun)
+    // JS Date#getUTCDay(): 0=Sun .. 6=Sat. Convert to Monday-based: 0=Mon .. 6=Sun
+    const firstDowMon0 = (monthStart.getUTCDay() + 6) % 7;
+    const displayFrom = new Date(monthStart);
+    displayFrom.setUTCDate(monthStart.getUTCDate() - firstDowMon0);
+
+    const lastDowMon0 = (monthEnd.getUTCDay() + 6) % 7;
+    const displayTo = new Date(monthEnd);
+    displayTo.setUTCDate(monthEnd.getUTCDate() + (6 - lastDowMon0));
+
+    return { displayFrom, displayTo, monthStart, monthEnd };
+  }
+
+  /**
+   * Build array of calendar days for month view with isOutsideMonth flag
+   */
+  private buildCalendarDaysForMonth(
+    from: Date,
+    to: Date,
+    monthStart: Date,
+    monthEnd: Date,
+    schedules: WorkSchedule[],
+    publicHolidays: PublicHoliday[],
+    companyHolidays: CompanyHoliday[],
+    absences: UserAbsence[],
+    timeEntries: (TimeEntry & {
+      project: { id: string; name: string } | null;
+    })[],
+    userCreatedAt: Date,
+  ): CalendarDay[] {
+    const days: CalendarDay[] = [];
+
+    // Create maps for quick lookup
+    const publicHolidayMap = new Map<string, PublicHoliday>();
+    publicHolidays.forEach((h) => {
+      const dateKey = h.date.toISOString().split('T')[0];
+      publicHolidayMap.set(dateKey, h);
+    });
+
+    const companyHolidayMap = new Map<string, CompanyHoliday>();
+    companyHolidays.forEach((h) => {
+      const dateKey = h.date.toISOString().split('T')[0];
+      companyHolidayMap.set(dateKey, h);
+    });
+
+    // Create schedule map by day of week
+    const scheduleMap = new Map<number, WorkSchedule>();
+    schedules.forEach((s) => {
+      scheduleMap.set(s.dayOfWeek, s);
+    });
+
+    // Group time entries by date
+    const entriesByDate = new Map<
+      string,
+      (TimeEntry & { project: { id: string; name: string } | null })[]
+    >();
+    timeEntries.forEach((e) => {
+      const dateKey = e.startTime.toISOString().split('T')[0];
+      const existing = entriesByDate.get(dateKey) || [];
+      existing.push(e);
+      entriesByDate.set(dateKey, existing);
+    });
+
+    const currentDate = new Date(from);
+    while (currentDate <= to) {
+      const dateKey = currentDate.toISOString().split('T')[0];
+      const dayOfWeek = (currentDate.getUTCDay() + 6) % 7; // 0 = Monday ... 6 = Sunday
+      const schedule = scheduleMap.get(dayOfWeek);
+
+      const publicHoliday = publicHolidayMap.get(dateKey);
+      const companyHoliday = companyHolidayMap.get(dateKey);
+      const absence = absences.find(
+        (a) => currentDate >= a.startDate && currentDate <= a.endDate,
+      );
+
+      const dayEntries = entriesByDate.get(dateKey) || [];
+      const loggedMinutes = dayEntries.reduce(
+        (sum, e) => sum + e.durationMinutes,
+        0,
+      );
+
+      const expectedMinutes = this.calculateExpectedMinutes(schedule);
+
+      const { status, holidayName, absenceType, isOvertime } =
+        this.determineStatus(
+          currentDate,
+          userCreatedAt,
+          publicHoliday,
+          companyHoliday,
+          absence,
+          schedule,
+          loggedMinutes,
+          expectedMinutes,
+        );
+
+      const entryBriefs: TimeEntryBrief[] = dayEntries.map((e) => ({
+        id: e.id,
+        startTime: e.startTime,
+        endTime: e.endTime,
+        durationMinutes: e.durationMinutes,
+        entryType: e.entryType,
+        projectId: e.project?.id || null,
+        projectName: e.project?.name || null,
+      }));
+
+      // Check if day is outside the target month
+      const isOutsideMonth = currentDate < monthStart || currentDate > monthEnd;
+
+      days.push({
+        date: dateKey,
+        dayOfWeek,
+        status,
+        holidayName,
+        absenceType,
+        expectedMinutes,
+        loggedMinutes,
+        entries: entryBriefs,
+        isOvertime,
+        isOutsideMonth: isOutsideMonth || undefined,
+      });
+
+      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+    }
+
+    return days;
   }
 
   /**
