@@ -42,6 +42,7 @@ export interface CalendarSummary {
   absenceDays: number;
   totalExpectedMinutes: number;
   totalLoggedMinutes: number;
+  minutesDifference: number;
   compliancePercentage: number;
 }
 

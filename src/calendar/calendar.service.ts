@@ -630,6 +630,8 @@ export class CalendarService {
       }
     }
 
+    const minutesDifference = totalLoggedMinutes - totalExpectedMinutes;
+
     // Calculate compliance percentage
     const compliancePercentage =
       totalExpectedMinutes > 0
@@ -644,7 +646,8 @@ export class CalendarService {
       absenceDays,
       totalExpectedMinutes,
       totalLoggedMinutes,
-      compliancePercentage: Math.min(100, compliancePercentage),
+      minutesDifference,
+      compliancePercentage,
     };
   }
 }
