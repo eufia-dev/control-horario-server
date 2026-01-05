@@ -133,13 +133,19 @@ export class UsersService {
           email: updateUserDto.email,
         });
         supabaseEmailUpdated = true;
+
+        // Update email for all users with the same authId (multitenancy)
+        await this.prisma.user.updateMany({
+          where: { authId: existing.authId },
+          data: { email: updateUserDto.email },
+        });
       }
 
       const user = await this.prisma.user.update({
         where: { id },
         data: {
           name: updateUserDto.name,
-          email: updateUserDto.email,
+          email: updateUserDto.email, // Already updated above if changed
           phone: updateUserDto.phone,
           hourlyCost: updateUserDto.hourlyCost
             ? updateUserDto.hourlyCost
@@ -156,6 +162,11 @@ export class UsersService {
         try {
           await this.supabaseService.updateUser(existing.authId, {
             email: existing.email,
+          });
+          // Rollback email for all users with the same authId
+          await this.prisma.user.updateMany({
+            where: { authId: existing.authId },
+            data: { email: existing.email },
           });
         } catch (rollbackError) {
           this.logger.error(
