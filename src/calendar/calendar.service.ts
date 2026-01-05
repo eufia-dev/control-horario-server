@@ -11,6 +11,7 @@ import type {
   CalendarMonthResponse,
   DayStatus,
   TimeEntryBrief,
+  ProjectBreakdown,
 } from './dto/calendar-day.dto.js';
 import type {
   WorkSchedule,
@@ -205,9 +206,16 @@ export class CalendarService {
       user.createdAt,
     );
 
+    // Get project breakdown from time entries (filter to month range only)
+    const projectBreakdown = this.computeProjectBreakdown(
+      timeEntries,
+      monthStart,
+      monthEnd,
+    );
+
     // Calculate summary only for days within the target month
     const monthDays = days.filter((d) => !d.isOutsideMonth);
-    const summary = this.calculateSummary(monthDays);
+    const summary = this.calculateSummary(monthDays, projectBreakdown);
 
     return {
       userId: user.id,
@@ -263,7 +271,7 @@ export class CalendarService {
     companyHolidays: CompanyHoliday[],
     absences: UserAbsence[],
     timeEntries: (TimeEntry & {
-      project: { id: string; name: string } | null;
+      project: { id: string; name: string; code: string } | null;
     })[],
     userCreatedAt: Date,
   ): CalendarDay[] {
@@ -291,7 +299,9 @@ export class CalendarService {
     // Group time entries by date
     const entriesByDate = new Map<
       string,
-      (TimeEntry & { project: { id: string; name: string } | null })[]
+      (TimeEntry & {
+        project: { id: string; name: string; code: string } | null;
+      })[]
     >();
     timeEntries.forEach((e) => {
       const dateKey = e.startTime.toISOString().split('T')[0];
@@ -375,7 +385,7 @@ export class CalendarService {
     companyHolidays: CompanyHoliday[],
     absences: UserAbsence[],
     timeEntries: (TimeEntry & {
-      project: { id: string; name: string } | null;
+      project: { id: string; name: string; code: string } | null;
     })[],
     userCreatedAt: Date,
   ): CalendarDay[] {
@@ -403,7 +413,9 @@ export class CalendarService {
     // Group time entries by date
     const entriesByDate = new Map<
       string,
-      (TimeEntry & { project: { id: string; name: string } | null })[]
+      (TimeEntry & {
+        project: { id: string; name: string; code: string } | null;
+      })[]
     >();
     timeEntries.forEach((e) => {
       const dateKey = e.startTime.toISOString().split('T')[0];
@@ -606,7 +618,10 @@ export class CalendarService {
     return { status: 'WORKED' };
   }
 
-  private calculateSummary(days: CalendarDay[]): CalendarSummary {
+  private calculateSummary(
+    days: CalendarDay[],
+    projectBreakdown?: ProjectBreakdown[],
+  ): CalendarSummary {
     let workingDays = 0;
     let daysWorked = 0;
     let daysMissing = 0;
@@ -666,6 +681,65 @@ export class CalendarService {
       totalLoggedMinutes,
       minutesDifference,
       compliancePercentage,
+      projectBreakdown,
     };
+  }
+
+  /**
+   * Compute project breakdown from time entries (in-memory aggregation)
+   * Only includes WORK entries with a project assigned
+   * Returns undefined if no project entries exist
+   */
+  private computeProjectBreakdown(
+    timeEntries: (TimeEntry & {
+      project: { id: string; name: string; code: string } | null;
+    })[],
+    monthStart: Date,
+    monthEnd: Date,
+  ): ProjectBreakdown[] | undefined {
+    // Filter entries: WORK type, has project, within month range
+    const projectEntries = timeEntries.filter(
+      (e) =>
+        e.entryType === 'WORK' &&
+        e.project !== null &&
+        e.startTime >= monthStart &&
+        e.startTime <= monthEnd,
+    );
+
+    if (projectEntries.length === 0) {
+      return undefined;
+    }
+
+    // Aggregate by project
+    const aggregation = new Map<
+      string,
+      { project: { id: string; name: string; code: string }; minutes: number }
+    >();
+
+    for (const entry of projectEntries) {
+      const projectId = entry.project!.id;
+      const existing = aggregation.get(projectId);
+
+      if (existing) {
+        existing.minutes += entry.durationMinutes;
+      } else {
+        aggregation.set(projectId, {
+          project: entry.project!,
+          minutes: entry.durationMinutes,
+        });
+      }
+    }
+
+    // Build and sort breakdown array
+    const breakdown: ProjectBreakdown[] = Array.from(aggregation.values())
+      .map((agg) => ({
+        projectId: agg.project.id,
+        projectName: agg.project.name,
+        projectCode: agg.project.code,
+        minutesWorked: agg.minutes,
+      }))
+      .sort((a, b) => b.minutesWorked - a.minutesWorked);
+
+    return breakdown.length > 0 ? breakdown : undefined;
   }
 }

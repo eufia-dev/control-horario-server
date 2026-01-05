@@ -605,7 +605,7 @@ export class TimeEntriesService {
     to: Date,
   ): Promise<
     (TimeEntry & {
-      project: { id: string; name: string } | null;
+      project: { id: string; name: string; code: string } | null;
     })[]
   > {
     return this.prisma.timeEntry.findMany({
@@ -616,7 +616,7 @@ export class TimeEntriesService {
       },
       include: {
         project: {
-          select: { id: true, name: true },
+          select: { id: true, name: true, code: true },
         },
       },
       orderBy: { startTime: 'asc' },

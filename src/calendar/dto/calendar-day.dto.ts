@@ -34,6 +34,13 @@ export interface CalendarDay {
   isOutsideMonth?: boolean; // Padding day from previous/next month (for month-based queries)
 }
 
+export interface ProjectBreakdown {
+  projectId: string;
+  projectName: string;
+  projectCode: string;
+  minutesWorked: number;
+}
+
 export interface CalendarSummary {
   workingDays: number;
   daysWorked: number;
@@ -44,6 +51,7 @@ export interface CalendarSummary {
   totalLoggedMinutes: number;
   minutesDifference: number;
   compliancePercentage: number;
+  projectBreakdown?: ProjectBreakdown[];
 }
 
 export interface CalendarResponse {
