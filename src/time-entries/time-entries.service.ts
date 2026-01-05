@@ -647,6 +647,52 @@ export class TimeEntriesService {
 
     const startTime = new Date(dto.startTime);
     const endTime = new Date(dto.endTime);
+
+    // Check for overlapping time entries
+    const overlappingEntry = await this.prisma.timeEntry.findFirst({
+      where: {
+        userId,
+        companyId,
+        OR: [
+          // New entry starts during an existing entry
+          {
+            startTime: { lte: startTime },
+            endTime: { gt: startTime },
+          },
+          // New entry ends during an existing entry
+          {
+            startTime: { lt: endTime },
+            endTime: { gte: endTime },
+          },
+          // New entry completely contains an existing entry
+          {
+            startTime: { gte: startTime },
+            endTime: { lte: endTime },
+          },
+        ],
+      },
+    });
+
+    if (overlappingEntry) {
+      throw new ConflictException(
+        'No se puede crear el registro porque se solapa con otro registro de tiempo existente',
+      );
+    }
+
+    // Check if user has an active timer and the new entry overlaps with it
+    const activeTimer = await this.prisma.activeTimer.findFirst({
+      where: { userId, companyId },
+    });
+
+    if (activeTimer) {
+      // New entry must end before the active timer started
+      if (endTime > activeTimer.startTime) {
+        throw new ConflictException(
+          'No se puede crear el registro porque se solapa con el temporizador activo. Solo puedes crear registros anteriores al inicio del temporizador.',
+        );
+      }
+    }
+
     const durationMinutes =
       dto.durationMinutes ??
       Math.round((endTime.getTime() - startTime.getTime()) / 60000);

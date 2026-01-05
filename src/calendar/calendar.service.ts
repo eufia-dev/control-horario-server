@@ -313,10 +313,10 @@ export class CalendarService {
       );
 
       const dayEntries = entriesByDate.get(dateKey) || [];
-      const loggedMinutes = dayEntries.reduce(
-        (sum, e) => sum + e.durationMinutes,
-        0,
-      );
+      // Only count WORK entries toward logged time (exclude pauses)
+      const loggedMinutes = dayEntries
+        .filter((e) => e.entryType === 'WORK')
+        .reduce((sum, e) => sum + e.durationMinutes, 0);
 
       const expectedMinutes = this.calculateExpectedMinutes(schedule);
 
@@ -425,10 +425,10 @@ export class CalendarService {
       );
 
       const dayEntries = entriesByDate.get(dateKey) || [];
-      const loggedMinutes = dayEntries.reduce(
-        (sum, e) => sum + e.durationMinutes,
-        0,
-      );
+      // Only count WORK entries toward logged time (exclude pauses)
+      const loggedMinutes = dayEntries
+        .filter((e) => e.entryType === 'WORK')
+        .reduce((sum, e) => sum + e.durationMinutes, 0);
 
       const expectedMinutes = this.calculateExpectedMinutes(schedule);
 
@@ -483,7 +483,25 @@ export class CalendarService {
     const startMinutes = startHour * 60 + startMin;
     const endMinutes = endHour * 60 + endMin;
 
-    return Math.max(0, endMinutes - startMinutes);
+    let totalMinutes = Math.max(0, endMinutes - startMinutes);
+
+    // Subtract scheduled break duration if present
+    if (schedule.breakStartTime && schedule.breakEndTime) {
+      const [breakStartHour, breakStartMin] = schedule.breakStartTime
+        .split(':')
+        .map(Number);
+      const [breakEndHour, breakEndMin] = schedule.breakEndTime
+        .split(':')
+        .map(Number);
+
+      const breakStartMinutes = breakStartHour * 60 + breakStartMin;
+      const breakEndMinutes = breakEndHour * 60 + breakEndMin;
+
+      const breakDuration = Math.max(0, breakEndMinutes - breakStartMinutes);
+      totalMinutes = Math.max(0, totalMinutes - breakDuration);
+    }
+
+    return totalMinutes;
   }
 
   /**

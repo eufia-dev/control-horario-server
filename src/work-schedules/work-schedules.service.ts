@@ -17,18 +17,67 @@ export class WorkSchedulesService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
+   * Convert time string (HH:mm) to minutes
+   */
+  private timeToMinutes(time: string): number {
+    const [hour, min] = time.split(':').map(Number);
+    return hour * 60 + min;
+  }
+
+  /**
    * Validate that endTime > startTime
    */
   private validateTimeRange(startTime: string, endTime: string): void {
-    const [startHour, startMin] = startTime.split(':').map(Number);
-    const [endHour, endMin] = endTime.split(':').map(Number);
-
-    const startMinutes = startHour * 60 + startMin;
-    const endMinutes = endHour * 60 + endMin;
+    const startMinutes = this.timeToMinutes(startTime);
+    const endMinutes = this.timeToMinutes(endTime);
 
     if (endMinutes <= startMinutes) {
       throw new BadRequestException(
         'endTime must be greater than startTime for each day',
+      );
+    }
+  }
+
+  /**
+   * Validate break times if provided
+   * - Both breakStartTime and breakEndTime must be present together (or neither)
+   * - breakEndTime must be greater than breakStartTime
+   * - Break must be within work hours
+   */
+  private validateBreakRange(
+    startTime: string,
+    endTime: string,
+    breakStartTime?: string,
+    breakEndTime?: string,
+  ): void {
+    // If neither is provided, that's valid
+    if (!breakStartTime && !breakEndTime) {
+      return;
+    }
+
+    // If only one is provided, that's invalid
+    if (!breakStartTime || !breakEndTime) {
+      throw new BadRequestException(
+        'Both breakStartTime and breakEndTime must be provided together, or neither',
+      );
+    }
+
+    const workStart = this.timeToMinutes(startTime);
+    const workEnd = this.timeToMinutes(endTime);
+    const breakStart = this.timeToMinutes(breakStartTime);
+    const breakEnd = this.timeToMinutes(breakEndTime);
+
+    // Break end must be after break start
+    if (breakEnd <= breakStart) {
+      throw new BadRequestException(
+        'breakEndTime must be greater than breakStartTime',
+      );
+    }
+
+    // Break must be within work hours
+    if (breakStart < workStart || breakEnd > workEnd) {
+      throw new BadRequestException(
+        'Break times must be within work hours (startTime to endTime)',
       );
     }
   }
@@ -42,6 +91,8 @@ export class WorkSchedulesService {
         dayOfWeek: s.dayOfWeek,
         startTime: s.startTime,
         endTime: s.endTime,
+        breakStartTime: s.breakStartTime ?? undefined,
+        breakEndTime: s.breakEndTime ?? undefined,
       }))
       .sort((a, b) => a.dayOfWeek - b.dayOfWeek);
 
@@ -123,9 +174,15 @@ export class WorkSchedulesService {
     companyId: string,
     dto: UpdateWorkScheduleDto,
   ): Promise<WorkScheduleResponse> {
-    // Validate all time ranges
+    // Validate all time ranges and break times
     for (const day of dto.days) {
       this.validateTimeRange(day.startTime, day.endTime);
+      this.validateBreakRange(
+        day.startTime,
+        day.endTime,
+        day.breakStartTime,
+        day.breakEndTime,
+      );
     }
 
     // Check for duplicate dayOfWeek values
@@ -158,6 +215,8 @@ export class WorkSchedulesService {
             dayOfWeek: day.dayOfWeek,
             startTime: day.startTime,
             endTime: day.endTime,
+            breakStartTime: day.breakStartTime ?? null,
+            breakEndTime: day.breakEndTime ?? null,
           })),
         });
       }
@@ -181,9 +240,15 @@ export class WorkSchedulesService {
       );
     }
 
-    // Validate all time ranges
+    // Validate all time ranges and break times
     for (const day of dto.days) {
       this.validateTimeRange(day.startTime, day.endTime);
+      this.validateBreakRange(
+        day.startTime,
+        day.endTime,
+        day.breakStartTime,
+        day.breakEndTime,
+      );
     }
 
     // Check for duplicate dayOfWeek values
@@ -229,6 +294,8 @@ export class WorkSchedulesService {
             dayOfWeek: day.dayOfWeek,
             startTime: day.startTime,
             endTime: day.endTime,
+            breakStartTime: day.breakStartTime ?? null,
+            breakEndTime: day.breakEndTime ?? null,
           })),
         });
       }
@@ -280,9 +347,15 @@ export class WorkSchedulesService {
     targetUserId: string,
     dto: UpdateWorkScheduleDto,
   ): Promise<WorkScheduleResponse> {
-    // Validate all time ranges
+    // Validate all time ranges and break times
     for (const day of dto.days) {
       this.validateTimeRange(day.startTime, day.endTime);
+      this.validateBreakRange(
+        day.startTime,
+        day.endTime,
+        day.breakStartTime,
+        day.breakEndTime,
+      );
     }
 
     // Check for duplicate dayOfWeek values
@@ -328,6 +401,8 @@ export class WorkSchedulesService {
             dayOfWeek: day.dayOfWeek,
             startTime: day.startTime,
             endTime: day.endTime,
+            breakStartTime: day.breakStartTime ?? null,
+            breakEndTime: day.breakEndTime ?? null,
           })),
         });
       }

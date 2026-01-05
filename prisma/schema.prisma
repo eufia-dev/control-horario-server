@@ -114,6 +114,9 @@ model WorkSchedule {
   startTime String @map("start_time")
   endTime   String @map("end_time")
 
+  breakStartTime String? @map("break_start_time")
+  breakEndTime   String? @map("break_end_time")
+
   company Company @relation(fields: [companyId], references: [id])
   user    User?   @relation(fields: [userId], references: [id])
 
