@@ -145,11 +145,9 @@ export class UsersService {
         where: { id },
         data: {
           name: updateUserDto.name,
-          email: updateUserDto.email, // Already updated above if changed
+          email: updateUserDto.email,
           phone: updateUserDto.phone,
-          hourlyCost: updateUserDto.hourlyCost
-            ? updateUserDto.hourlyCost
-            : undefined,
+          hourlyCost: updateUserDto.hourlyCost,
           isActive: updateUserDto.isActive,
           role: updateUserDto.role,
           relation: updateUserDto.relation,

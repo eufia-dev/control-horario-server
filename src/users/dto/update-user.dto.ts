@@ -28,8 +28,8 @@ export class UpdateUserDto {
   name: string;
 
   @IsEmail()
-  @IsNotEmpty()
-  email: string;
+  @IsOptional()
+  email?: string;
 
   @IsString()
   @IsOptional()
