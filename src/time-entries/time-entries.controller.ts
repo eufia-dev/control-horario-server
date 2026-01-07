@@ -22,6 +22,7 @@ import { UpdateTimeEntryDto } from './dto/update-time-entry.dto.js';
 import { StartTimerDto } from './dto/start-timer.dto.js';
 import { SwitchTimerDto } from './dto/switch-timer.dto.js';
 import { GetTimeEntriesQueryDto } from './dto/get-time-entries-query.dto.js';
+import { GetTimeEntriesByDateQueryDto } from './dto/get-time-entries-by-date-query.dto.js';
 import { AdminGetTimeEntriesQueryDto } from './dto/admin-get-time-entries-query.dto.js';
 import {
   DeletedTimeEntryResponse,
@@ -63,6 +64,18 @@ export class TimeEntriesController {
       req.user.companyId,
       query.year,
       query.month,
+    );
+  }
+
+  @Get('me/by-date')
+  findMyEntriesByDate(
+    @Query() query: GetTimeEntriesByDateQueryDto,
+    @Req() req: RequestWithUser,
+  ): Promise<TimeEntryResponse[]> {
+    return this.timeEntriesService.findMyEntriesByDate(
+      req.user.sub,
+      req.user.companyId,
+      query.date,
     );
   }
 

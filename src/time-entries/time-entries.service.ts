@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateTimeEntryDto } from './dto/create-time-entry.dto.js';
@@ -263,6 +264,41 @@ export class TimeEntriesService {
         },
       },
       orderBy: { startTime: 'desc' },
+    });
+
+    return timeEntries.map((entry) => this.toTimeEntryResponse(entry));
+  }
+
+  async findMyEntriesByDate(
+    userId: string,
+    companyId: string,
+    date: string,
+  ): Promise<TimeEntryResponse[]> {
+    // Parse the date string (YYYY-MM-DD format)
+    const [year, month, day] = date.split('-').map(Number);
+
+    // Create start and end of the day in UTC
+    const startOfDay = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+    const endOfDay = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+
+    const timeEntries = await this.prisma.timeEntry.findMany({
+      where: {
+        userId,
+        companyId,
+        startTime: {
+          gte: startOfDay,
+          lte: endOfDay,
+        },
+      },
+      include: {
+        user: {
+          select: { id: true, name: true, email: true },
+        },
+        project: {
+          select: { id: true, name: true, code: true },
+        },
+      },
+      orderBy: { startTime: 'asc' },
     });
 
     return timeEntries.map((entry) => this.toTimeEntryResponse(entry));
@@ -648,6 +684,17 @@ export class TimeEntriesService {
     const startTime = new Date(dto.startTime);
     const endTime = new Date(dto.endTime);
 
+    // Validate that time entries are not for future days
+    const tomorrow = new Date();
+    tomorrow.setHours(0, 0, 0, 0);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    if (startTime >= tomorrow || endTime >= tomorrow) {
+      throw new BadRequestException(
+        'No se pueden crear registros de tiempo para días futuros',
+      );
+    }
+
     // Check for overlapping time entries
     const overlappingEntry = await this.prisma.timeEntry.findFirst({
       where: {
@@ -737,6 +784,36 @@ export class TimeEntriesService {
       if (!project) {
         throw new NotFoundException(
           `Proyecto con ID ${updateTimeEntryDto.projectId} no encontrado`,
+        );
+      }
+    }
+
+    // Validate that time entries are not being updated to future days
+    if (updateTimeEntryDto.startTime || updateTimeEntryDto.endTime) {
+      const existing = await this.prisma.timeEntry.findUnique({
+        where: { id },
+      });
+
+      if (!existing) {
+        throw new NotFoundException(
+          `Registro de tiempo con ID ${id} no encontrado`,
+        );
+      }
+
+      const tomorrow = new Date();
+      tomorrow.setHours(0, 0, 0, 0);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const finalStartTime = updateTimeEntryDto.startTime
+        ? new Date(updateTimeEntryDto.startTime)
+        : existing.startTime;
+      const finalEndTime = updateTimeEntryDto.endTime
+        ? new Date(updateTimeEntryDto.endTime)
+        : existing.endTime;
+
+      if (finalStartTime >= tomorrow || finalEndTime >= tomorrow) {
+        throw new BadRequestException(
+          'No se pueden modificar registros de tiempo para días futuros',
         );
       }
     }
