@@ -45,7 +45,7 @@ export class UsersService {
           deletedAt: null,
         },
         orderBy: {
-          createdAt: 'desc',
+          name: 'asc',
         },
       });
 
