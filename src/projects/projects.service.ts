@@ -30,7 +30,7 @@ export class ProjectsService {
   async findAll(companyId: string): Promise<ProjectResponse[]> {
     const projects = await this.prisma.project.findMany({
       where: { companyId },
-      orderBy: { name: 'asc' },
+      orderBy: { code: 'asc' },
     });
 
     return projects.map((project) => this.toProjectResponse(project));

@@ -150,8 +150,8 @@ model Project {
   companyId  String  @map("company_id") @db.Uuid
   categoryId String? @map("category_id") @db.Uuid
 
-  name     String  @db.VarChar(255)
   code     String  @db.VarChar(50)
+  name     String  @db.VarChar(255)
   isActive Boolean @default(true) @map("is_active")
 
   company  Company          @relation(fields: [companyId], references: [id])
