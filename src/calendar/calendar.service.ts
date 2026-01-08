@@ -342,6 +342,16 @@ export class CalendarService {
           expectedMinutes,
         );
 
+      // Set expectedMinutes to 0 for non-working days, holidays, absences, and days before user was created
+      const effectiveExpectedMinutes =
+        status === 'PUBLIC_HOLIDAY' ||
+        status === 'COMPANY_HOLIDAY' ||
+        status === 'ABSENCE' ||
+        status === 'NON_WORKING_DAY' ||
+        status === 'BEFORE_USER_CREATED'
+          ? 0
+          : expectedMinutes;
+
       const entryBriefs: TimeEntryBrief[] = dayEntries.map((e) => ({
         id: e.id,
         startTime: e.startTime,
@@ -361,7 +371,7 @@ export class CalendarService {
         status,
         holidayName,
         absenceType,
-        expectedMinutes,
+        expectedMinutes: effectiveExpectedMinutes,
         loggedMinutes,
         entries: entryBriefs,
         isOvertime,
@@ -456,6 +466,16 @@ export class CalendarService {
           expectedMinutes,
         );
 
+      // Set expectedMinutes to 0 for non-working days, holidays, absences, and days before user was created
+      const effectiveExpectedMinutes =
+        status === 'PUBLIC_HOLIDAY' ||
+        status === 'COMPANY_HOLIDAY' ||
+        status === 'ABSENCE' ||
+        status === 'NON_WORKING_DAY' ||
+        status === 'BEFORE_USER_CREATED'
+          ? 0
+          : expectedMinutes;
+
       const entryBriefs: TimeEntryBrief[] = dayEntries.map((e) => ({
         id: e.id,
         startTime: e.startTime,
@@ -472,7 +492,7 @@ export class CalendarService {
         status,
         holidayName,
         absenceType,
-        expectedMinutes,
+        expectedMinutes: effectiveExpectedMinutes,
         loggedMinutes,
         entries: entryBriefs,
         isOvertime,
