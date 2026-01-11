@@ -50,6 +50,12 @@ export interface AbsenceStats {
   cancelled: number;
 }
 
+export interface GetAllAbsencesOptions {
+  status?: AbsenceStatus;
+  userId?: string;
+  userIds?: string[] | null;
+}
+
 @Injectable()
 export class AbsencesService {
   private readonly logger = new Logger(AbsencesService.name);
@@ -237,14 +243,15 @@ export class AbsencesService {
 
   async getAllAbsences(
     companyId: string,
-    status?: AbsenceStatus,
-    userId?: string,
+    options?: GetAllAbsencesOptions,
   ): Promise<AbsenceResponse[]> {
     const absences = await this.prisma.userAbsence.findMany({
       where: {
         companyId,
-        ...(status && { status }),
-        ...(userId && { userId }),
+        ...(options?.status && { status: options.status }),
+        ...(options?.userId && { userId: options.userId }),
+        // Filter by userIds if provided (for team scope)
+        ...(options?.userIds && { userId: { in: options.userIds } }),
       },
       include: {
         user: {
@@ -342,10 +349,17 @@ export class AbsencesService {
     return this.toAbsenceResponse(updated);
   }
 
-  async getAbsenceStats(companyId: string): Promise<AbsenceStats> {
+  async getAbsenceStats(
+    companyId: string,
+    userIds?: string[] | null,
+  ): Promise<AbsenceStats> {
     const counts = await this.prisma.userAbsence.groupBy({
       by: ['status'],
-      where: { companyId },
+      where: {
+        companyId,
+        // Filter by userIds if provided (for team scope)
+        ...(userIds && { userId: { in: userIds } }),
+      },
       _count: { status: true },
     });
 
@@ -479,7 +493,7 @@ export class AbsencesService {
   }
 
   /**
-   * Notify admins of a new absence request
+   * Notify admins and team leaders of a new absence request
    */
   private async notifyAdminsOfAbsenceRequest(
     absence: UserAbsence & {
@@ -506,6 +520,12 @@ export class AbsencesService {
       return;
     }
 
+    // Get the requesting user's teamId
+    const requestingUser = await this.prisma.user.findUnique({
+      where: { id: absence.userId },
+      select: { teamId: true },
+    });
+
     // Get all admins (OWNER or ADMIN roles)
     const admins = await this.prisma.user.findMany({
       where: {
@@ -521,9 +541,37 @@ export class AbsencesService {
       },
     });
 
-    if (admins.length === 0) {
+    // Get team leaders for the user's team (if user has a team)
+    let teamLeaders: { id: string; name: string; email: string }[] = [];
+    if (requestingUser?.teamId) {
+      teamLeaders = await this.prisma.user.findMany({
+        where: {
+          companyId: absence.companyId,
+          teamId: requestingUser.teamId,
+          role: 'TEAM_LEADER',
+          deletedAt: null,
+          isActive: true,
+          // Don't notify if the team leader is the one requesting the absence
+          id: { not: absence.userId },
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+        },
+      });
+    }
+
+    // Combine admins and team leaders, avoiding duplicates
+    const adminIds = new Set(admins.map((a) => a.id));
+    const recipients = [
+      ...admins,
+      ...teamLeaders.filter((tl) => !adminIds.has(tl.id)),
+    ];
+
+    if (recipients.length === 0) {
       this.logger.warn(
-        `No admins found for company ${absence.companyId} to notify about absence request`,
+        `No admins or team leaders found for company ${absence.companyId} to notify about absence request`,
       );
       return;
     }
@@ -540,11 +588,11 @@ export class AbsencesService {
       day: 'numeric',
     });
 
-    // Send email to each admin
-    const emailPromises = admins.map((admin) =>
+    // Send email to each recipient (admin or team leader)
+    const emailPromises = recipients.map((recipient) =>
       this.emailService.sendAbsenceRequestNotification({
-        to: admin.email,
-        adminName: admin.name,
+        to: recipient.email,
+        adminName: recipient.name,
         userName: absence.user.name,
         companyName: company.name,
         absenceType: absenceTypeName,

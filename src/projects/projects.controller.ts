@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { AdminGuard } from '../auth/admin.guard.js';
+import { TeamLeaderGuard } from '../auth/team-leader.guard.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
 import { CreateProjectDto } from './dto/create-project.dto.js';
@@ -43,16 +43,20 @@ export class ProjectsController {
   }
 
   @Post()
-  @UseGuards(AdminGuard)
+  @UseGuards(TeamLeaderGuard)
   create(
     @Body() createProjectDto: CreateProjectDto,
     @Req() req: RequestWithUser,
   ): Promise<ProjectResponse> {
-    return this.projectsService.create(createProjectDto, req.user.companyId);
+    return this.projectsService.create(
+      createProjectDto,
+      req.user.companyId,
+      req.user,
+    );
   }
 
   @Patch(':id')
-  @UseGuards(AdminGuard)
+  @UseGuards(TeamLeaderGuard)
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateProjectDto: UpdateProjectDto,
@@ -62,15 +66,16 @@ export class ProjectsController {
       id,
       updateProjectDto,
       req.user.companyId,
+      req.user,
     );
   }
 
   @Delete(':id')
-  @UseGuards(AdminGuard)
+  @UseGuards(TeamLeaderGuard)
   remove(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithUser,
   ): Promise<DeletedProjectResponse> {
-    return this.projectsService.remove(id, req.user.companyId);
+    return this.projectsService.remove(id, req.user.companyId, req.user);
   }
 }

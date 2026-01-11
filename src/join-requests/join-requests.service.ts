@@ -94,6 +94,11 @@ export class JoinRequestsService {
    * Approve a join request and create/reactivate user
    * Handles the case where a previously deleted user is rejoining the company
    */
+  /**
+   * Approve a join request.
+   * Note: TEAM_LEADER role cannot be assigned when approving - requires team assignment.
+   * Users should be approved as WORKER/ADMIN and promoted to TEAM_LEADER after joining.
+   */
   async approve(
     id: string,
     companyId: string,
@@ -246,6 +251,7 @@ export class JoinRequestsService {
       [RelationType.GUEST]: 'Invitado',
     };
 
+    // Note: TEAM_LEADER is not available for approvals - must be assigned after joining
     const roleNames: Record<string, string> = {
       [UserRole.ADMIN]: 'Administrador',
       [UserRole.WORKER]: 'Trabajador',

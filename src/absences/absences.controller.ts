@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   ParseUUIDPipe,
@@ -11,27 +12,31 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import type { AbsenceStatus } from '@prisma/client';
 import type { Request } from 'express';
-import { AdminGuard } from '../auth/admin.guard.js';
+import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { NotGuestGuard } from '../auth/not-guest.guard.js';
-import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
-import { CreateAbsenceDto } from './dto/create-absence.dto.js';
-import { ReviewAbsenceDto } from './dto/review-absence.dto.js';
+import { TeamLeaderGuard } from '../auth/team-leader.guard.js';
+import { TeamScopeService } from '../auth/team-scope.service.js';
 import {
   AbsencesService,
   type AbsenceResponse,
-  type AbsenceTypeOption,
   type AbsenceStats,
+  type AbsenceTypeOption,
 } from './absences.service.js';
-import type { AbsenceStatus } from '@prisma/client';
+import { CreateAbsenceDto } from './dto/create-absence.dto.js';
+import { ReviewAbsenceDto } from './dto/review-absence.dto.js';
 
 type RequestWithUser = Request & { user: JwtPayload };
 
 @Controller('absences')
 @UseGuards(JwtAuthGuard)
 export class AbsencesController {
-  constructor(private readonly absencesService: AbsencesService) {}
+  constructor(
+    private readonly absencesService: AbsencesService,
+    private readonly teamScopeService: TeamScopeService,
+  ) {}
 
   /**
    * GET /absences/types
@@ -44,12 +49,13 @@ export class AbsencesController {
 
   /**
    * GET /absences/stats
-   * Get absence statistics for the company (admin only)
+   * Get absence statistics for the company (admin/team leader)
    */
   @Get('stats')
-  @UseGuards(AdminGuard)
+  @UseGuards(TeamLeaderGuard)
   async getStats(@Req() req: RequestWithUser): Promise<AbsenceStats> {
-    return this.absencesService.getAbsenceStats(req.user.companyId);
+    const userIds = await this.teamScopeService.getUserIdsInScope(req.user);
+    return this.absencesService.getAbsenceStats(req.user.companyId, userIds);
   }
 
   /**
@@ -100,46 +106,74 @@ export class AbsencesController {
 
   /**
    * GET /absences
-   * Get all company absences (admin only)
+   * Get all company absences (admin/team leader - team scoped)
    */
   @Get()
-  @UseGuards(AdminGuard)
+  @UseGuards(TeamLeaderGuard)
   async getAllAbsences(
     @Req() req: RequestWithUser,
     @Query('status') status?: AbsenceStatus,
     @Query('userId') userId?: string,
   ): Promise<AbsenceResponse[]> {
-    return this.absencesService.getAllAbsences(
-      req.user.companyId,
+    const userIds = await this.teamScopeService.getUserIdsInScope(req.user);
+    return this.absencesService.getAllAbsences(req.user.companyId, {
       status,
       userId,
-    );
+      userIds,
+    });
   }
 
   /**
    * GET /absences/:id
-   * Get a single absence by ID (admin only)
+   * Get a single absence by ID (admin/team leader - must have access to the user)
    */
   @Get(':id')
-  @UseGuards(AdminGuard)
+  @UseGuards(TeamLeaderGuard)
   async getAbsence(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithUser,
   ): Promise<AbsenceResponse> {
-    return this.absencesService.getAbsenceById(id, req.user.companyId);
+    const absence = await this.absencesService.getAbsenceById(
+      id,
+      req.user.companyId,
+    );
+    // Check if user has access to the absence's user
+    const canAccess = await this.teamScopeService.canAccessUser(
+      req.user,
+      absence.userId,
+    );
+    if (!canAccess) {
+      throw new ForbiddenException('No tienes acceso a esta ausencia');
+    }
+    return absence;
   }
 
   /**
    * PATCH /absences/:id/review
-   * Approve or reject an absence request (admin only)
+   * Approve or reject an absence request (admin/team leader - must have access to the user)
    */
   @Patch(':id/review')
-  @UseGuards(AdminGuard)
+  @UseGuards(TeamLeaderGuard)
   async reviewAbsence(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ReviewAbsenceDto,
     @Req() req: RequestWithUser,
   ): Promise<AbsenceResponse> {
+    // First get the absence to check permissions
+    const absence = await this.absencesService.getAbsenceById(
+      id,
+      req.user.companyId,
+    );
+    // Check if user has access to the absence's user
+    const canAccess = await this.teamScopeService.canAccessUser(
+      req.user,
+      absence.userId,
+    );
+    if (!canAccess) {
+      throw new ForbiddenException(
+        'No tienes acceso para revisar esta ausencia',
+      );
+    }
     return this.absencesService.reviewAbsence(
       id,
       req.user.sub,

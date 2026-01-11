@@ -43,6 +43,8 @@ export class InvitationsService {
 
   /**
    * Create a new invitation
+   * Note: TEAM_LEADER role cannot be assigned via invitation because they need a team.
+   * Users should be invited as WORKER/ADMIN and promoted to TEAM_LEADER after joining.
    */
   async create(
     companyId: string,
@@ -224,6 +226,7 @@ export class InvitationsService {
       [RelationType.GUEST]: 'Invitado',
     };
 
+    // Note: TEAM_LEADER is not available for invitations - must be assigned after joining
     const roleNames: Record<string, string> = {
       [UserRole.ADMIN]: 'Administrador',
       [UserRole.WORKER]: 'Trabajador',

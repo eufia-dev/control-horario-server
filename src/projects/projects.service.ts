@@ -1,8 +1,19 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateProjectDto } from './dto/create-project.dto.js';
 import { UpdateProjectDto } from './dto/update-project.dto.js';
 import type { Project } from '@prisma/client';
+import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
+
+export interface ProjectTeamInfo {
+  id: string;
+  name: string;
+}
 
 export interface ProjectResponse {
   id: string;
@@ -11,6 +22,8 @@ export interface ProjectResponse {
   isActive: boolean;
   companyId: string;
   categoryId: string | null;
+  teamId: string | null;
+  team: ProjectTeamInfo | null;
   createdAt: Date;
 }
 
@@ -30,6 +43,11 @@ export class ProjectsService {
   async findAll(companyId: string): Promise<ProjectResponse[]> {
     const projects = await this.prisma.project.findMany({
       where: { companyId },
+      include: {
+        team: {
+          select: { id: true, name: true },
+        },
+      },
       orderBy: { code: 'asc' },
     });
 
@@ -39,6 +57,11 @@ export class ProjectsService {
   async findOne(id: string, companyId: string): Promise<ProjectResponse> {
     const project = await this.prisma.project.findFirst({
       where: { id, companyId },
+      include: {
+        team: {
+          select: { id: true, name: true },
+        },
+      },
     });
 
     if (!project) {
@@ -51,13 +74,37 @@ export class ProjectsService {
   async create(
     createProjectDto: CreateProjectDto,
     companyId: string,
+    user: JwtPayload,
   ): Promise<ProjectResponse> {
+    // Determine teamId based on user role:
+    // - TEAM_LEADER: automatically use their teamId (cannot create company-wide projects)
+    // - ADMIN/OWNER: can specify teamId or leave null for company-wide
+    let teamId: string | null = null;
+
+    if (user.role === 'TEAM_LEADER') {
+      if (!user.teamId) {
+        throw new ForbiddenException(
+          'Debes pertenecer a un equipo para crear proyectos',
+        );
+      }
+      teamId = user.teamId; // Always assign to their team
+    } else {
+      // Admin can optionally assign to a team
+      teamId = createProjectDto.teamId || null;
+    }
+
     const project = await this.prisma.project.create({
       data: {
         name: createProjectDto.name,
         code: createProjectDto.code,
         companyId,
         categoryId: createProjectDto.categoryId,
+        teamId,
+      },
+      include: {
+        team: {
+          select: { id: true, name: true },
+        },
       },
     });
 
@@ -68,6 +115,7 @@ export class ProjectsService {
     id: string,
     updateProjectDto: UpdateProjectDto,
     companyId: string,
+    user: JwtPayload,
   ): Promise<ProjectResponse> {
     // Verify the project belongs to the company
     const existing = await this.prisma.project.findFirst({
@@ -78,6 +126,16 @@ export class ProjectsService {
       throw new NotFoundException(`Proyecto con ID ${id} no encontrado`);
     }
 
+    // Authorization check for TEAM_LEADER
+    if (user.role === 'TEAM_LEADER') {
+      // Can only edit projects belonging to their team
+      if (!existing.teamId || existing.teamId !== user.teamId) {
+        throw new ForbiddenException(
+          'Solo puedes editar proyectos de tu equipo',
+        );
+      }
+    }
+
     const project = await this.prisma.project.update({
       where: { id },
       data: {
@@ -86,18 +144,37 @@ export class ProjectsService {
         isActive: updateProjectDto.isActive,
         categoryId: updateProjectDto.categoryId,
       },
+      include: {
+        team: {
+          select: { id: true, name: true },
+        },
+      },
     });
 
     return this.toProjectResponse(project);
   }
 
-  async remove(id: string, companyId: string): Promise<DeletedProjectResponse> {
+  async remove(
+    id: string,
+    companyId: string,
+    user: JwtPayload,
+  ): Promise<DeletedProjectResponse> {
     const existing = await this.prisma.project.findFirst({
       where: { id, companyId },
     });
 
     if (!existing) {
       throw new NotFoundException(`Proyecto con ID ${id} no encontrado`);
+    }
+
+    // Authorization check for TEAM_LEADER
+    if (user.role === 'TEAM_LEADER') {
+      // Can only delete projects belonging to their team
+      if (!existing.teamId || existing.teamId !== user.teamId) {
+        throw new ForbiddenException(
+          'Solo puedes eliminar proyectos de tu equipo',
+        );
+      }
     }
 
     const deleted = await this.prisma.project.delete({
@@ -107,7 +184,9 @@ export class ProjectsService {
     return this.toDeletedProjectResponse(deleted);
   }
 
-  private toProjectResponse(project: Project): ProjectResponse {
+  private toProjectResponse(
+    project: Project & { team?: { id: string; name: string } | null },
+  ): ProjectResponse {
     return {
       id: project.id,
       name: project.name,
@@ -115,6 +194,8 @@ export class ProjectsService {
       isActive: project.isActive,
       companyId: project.companyId,
       categoryId: project.categoryId,
+      teamId: project.teamId,
+      team: project.team ?? null,
       createdAt: project.createdAt,
     };
   }

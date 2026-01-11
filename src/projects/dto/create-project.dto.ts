@@ -11,4 +11,8 @@ export class CreateProjectDto {
   @IsUUID()
   @IsOptional()
   categoryId?: string;
+
+  @IsUUID()
+  @IsOptional()
+  teamId?: string;
 }

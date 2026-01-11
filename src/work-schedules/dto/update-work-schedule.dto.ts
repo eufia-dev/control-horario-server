@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsBoolean,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -8,6 +9,7 @@ import {
   Min,
   Max,
   ValidateNested,
+  ValidateIf,
   ArrayMinSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -19,19 +21,25 @@ export class WorkScheduleDayDto {
   @IsNotEmpty()
   dayOfWeek: number; // 0=Monday, 6=Sunday
 
+  @IsOptional()
+  @IsBoolean()
+  isWorkable?: boolean; // defaults to true if not provided
+
+  @ValidateIf((o) => o.isWorkable !== false)
   @IsString()
   @IsNotEmpty()
   @Matches(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/, {
     message: 'startTime must be in HH:mm format',
   })
-  startTime: string; // HH:mm format
+  startTime?: string; // HH:mm format, required when isWorkable !== false
 
+  @ValidateIf((o) => o.isWorkable !== false)
   @IsString()
   @IsNotEmpty()
   @Matches(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/, {
     message: 'endTime must be in HH:mm format',
   })
-  endTime: string; // HH:mm format
+  endTime?: string; // HH:mm format, required when isWorkable !== false
 
   @IsOptional()
   @IsString()

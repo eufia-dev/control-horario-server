@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -10,6 +11,11 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { SupabaseService } from '../supabase/supabase.service.js';
 import { UpdateUserDto } from './dto/update-user.dto.js';
 import type { User, UserRole } from '@prisma/client';
+
+export interface UserTeamInfo {
+  id: string;
+  name: string;
+}
 
 export interface UserResponse {
   id: string;
@@ -24,8 +30,13 @@ export interface UserResponse {
   relation: string;
   nif: string | null;
   naf: string | null;
+  team: UserTeamInfo | null;
   createdAt: Date;
   updatedAt: Date | null;
+}
+
+export interface FindAllOptions {
+  userIds?: string[] | null;
 }
 
 @Injectable()
@@ -37,12 +48,22 @@ export class UsersService {
     private readonly supabaseService: SupabaseService,
   ) {}
 
-  async findAll(companyId: string): Promise<UserResponse[]> {
+  async findAll(
+    companyId: string,
+    options?: FindAllOptions,
+  ): Promise<UserResponse[]> {
     try {
       const users = await this.prisma.user.findMany({
         where: {
           companyId,
           deletedAt: null,
+          // Filter by userIds if provided (for team scope)
+          ...(options?.userIds && { id: { in: options.userIds } }),
+        },
+        include: {
+          team: {
+            select: { id: true, name: true },
+          },
         },
         orderBy: {
           name: 'asc',
@@ -68,6 +89,11 @@ export class UsersService {
           id,
           companyId,
           deletedAt: null,
+        },
+        include: {
+          team: {
+            select: { id: true, name: true },
+          },
         },
       });
 
@@ -107,6 +133,20 @@ export class UsersService {
 
       if (!existing) {
         throw new NotFoundException(`Usuario con ID ${id} no encontrado`);
+      }
+
+      // Determine final role and teamId after update
+      const finalRole = (updateUserDto.role ?? existing.role) as string;
+      const finalTeamId =
+        updateUserDto.teamId !== undefined
+          ? updateUserDto.teamId
+          : existing.teamId;
+
+      // Validate TEAM_LEADER must have a team assigned
+      if (finalRole === 'TEAM_LEADER' && !finalTeamId) {
+        throw new BadRequestException(
+          'Un líder de equipo debe tener un equipo asignado',
+        );
       }
 
       emailChanged =
@@ -151,6 +191,12 @@ export class UsersService {
           isActive: updateUserDto.isActive,
           role: updateUserDto.role,
           relation: updateUserDto.relation,
+          teamId: updateUserDto.teamId,
+        },
+        include: {
+          team: {
+            select: { id: true, name: true },
+          },
         },
       });
 
@@ -178,7 +224,8 @@ export class UsersService {
 
       if (
         error instanceof NotFoundException ||
-        error instanceof ConflictException
+        error instanceof ConflictException ||
+        error instanceof BadRequestException
       ) {
         throw error;
       }
@@ -251,7 +298,9 @@ export class UsersService {
     }
   }
 
-  private toUserResponse(user: User): UserResponse {
+  private toUserResponse(
+    user: User & { team?: { id: string; name: string } | null },
+  ): UserResponse {
     return {
       id: user.id,
       authId: user.authId,
@@ -265,6 +314,7 @@ export class UsersService {
       relation: user.relation,
       nif: user.nif,
       naf: user.naf,
+      team: user.team ?? null,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };

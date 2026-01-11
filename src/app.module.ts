@@ -21,6 +21,7 @@ import { CalendarModule } from './calendar/calendar.module.js';
 import { LocationsModule } from './locations/locations.module.js';
 import { WorkSchedulesModule } from './work-schedules/work-schedules.module.js';
 import { RemindersModule } from './reminders/reminders.module.js';
+import { TeamsModule } from './teams/teams.module.js';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { RemindersModule } from './reminders/reminders.module.js';
     LocationsModule,
     WorkSchedulesModule,
     RemindersModule,
+    TeamsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

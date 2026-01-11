@@ -10,19 +10,22 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { AdminGuard } from '../auth/admin.guard.js';
-import { NotGuestGuard } from '../auth/not-guest.guard.js';
+import { CheckUserAccess } from '../auth/decorators/check-user-access.decorator.js';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
-import { WorkSchedulesService } from './work-schedules.service.js';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { NotGuestGuard } from '../auth/not-guest.guard.js';
+import { TeamLeaderGuard } from '../auth/team-leader.guard.js';
+import { UserAccessGuard } from '../auth/user-access.guard.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 import type { WorkScheduleResponse } from './dto/work-schedule-response.dto.js';
 import { UpdateWorkScheduleDto } from './dto/update-work-schedule.dto.js';
-import { PrismaService } from '../prisma/prisma.service.js';
+import { WorkSchedulesService } from './work-schedules.service.js';
 
 type RequestWithUser = Request & { user: JwtPayload };
 
 @Controller('work-schedules')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, UserAccessGuard)
 export class WorkSchedulesController {
   constructor(
     private readonly workSchedulesService: WorkSchedulesService,
@@ -56,10 +59,11 @@ export class WorkSchedulesController {
 
   /**
    * GET /work-schedules/users/:userId
-   * Get effective schedule for a specific user (admin only)
+   * Get effective schedule for a specific user (admin/team leader)
    */
-  @UseGuards(AdminGuard)
   @Get('users/:userId')
+  @UseGuards(TeamLeaderGuard)
+  @CheckUserAccess({ paramName: 'userId' })
   async getUserSchedule(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Req() req: RequestWithUser,
@@ -142,10 +146,11 @@ export class WorkSchedulesController {
 
   /**
    * PUT /work-schedules/users/:userId
-   * Update a specific user's schedule overrides (admin only)
+   * Update a specific user's schedule overrides (admin/team leader)
    */
-  @UseGuards(AdminGuard)
   @Put('users/:userId')
+  @UseGuards(TeamLeaderGuard)
+  @CheckUserAccess({ paramName: 'userId' })
   async updateUserSchedule(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: UpdateWorkScheduleDto,
@@ -160,10 +165,11 @@ export class WorkSchedulesController {
 
   /**
    * DELETE /work-schedules/users/:userId/overrides
-   * Delete all schedule overrides for a specific user (admin only)
+   * Delete all schedule overrides for a specific user (admin/team leader)
    */
-  @UseGuards(AdminGuard)
   @Delete('users/:userId/overrides')
+  @UseGuards(TeamLeaderGuard)
+  @CheckUserAccess({ paramName: 'userId' })
   async deleteUserOverrides(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Req() req: RequestWithUser,

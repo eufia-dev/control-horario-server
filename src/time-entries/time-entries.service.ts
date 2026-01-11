@@ -86,6 +86,13 @@ export interface EnumOption {
   name: string;
 }
 
+export interface FindAllTimeEntriesOptions {
+  userId?: string;
+  userIds?: string[] | null;
+  year?: number;
+  month?: number;
+}
+
 @Injectable()
 export class TimeEntriesService {
   constructor(private readonly prisma: PrismaService) {}
@@ -114,24 +121,33 @@ export class TimeEntriesService {
 
   async findAll(
     companyId: string,
-    userId?: string,
-    year?: number,
-    month?: number,
+    options?: FindAllTimeEntriesOptions,
   ): Promise<TimeEntryResponse[]> {
     const whereClause: {
       companyId: string;
-      userId?: string;
+      userId?: string | { in: string[] };
       startTime?: { gte: Date; lte: Date };
     } = { companyId };
 
-    if (userId) {
-      whereClause.userId = userId;
+    if (options?.userId) {
+      whereClause.userId = options.userId;
+    } else if (options?.userIds) {
+      // Filter by userIds if provided (for team scope)
+      whereClause.userId = { in: options.userIds };
     }
 
     // Filter by year and month if provided (month is 0-indexed: 0 = January)
-    if (year !== undefined && month !== undefined) {
-      const startDate = new Date(year, month, 1, 0, 0, 0, 0);
-      const endDate = new Date(year, month + 1, 0, 23, 59, 59, 999);
+    if (options?.year !== undefined && options?.month !== undefined) {
+      const startDate = new Date(options.year, options.month, 1, 0, 0, 0, 0);
+      const endDate = new Date(
+        options.year,
+        options.month + 1,
+        0,
+        23,
+        59,
+        59,
+        999,
+      );
       whereClause.startTime = {
         gte: startDate,
         lte: endDate,

@@ -301,12 +301,17 @@ export class AnalyticsService {
    * GET /analytics/workers-summary
    * Returns aggregated data for all active workers (users + externals)
    */
-  async getWorkersSummary(companyId: string): Promise<WorkersSummaryResponse> {
+  async getWorkersSummary(
+    companyId: string,
+    options?: { userIds?: string[] | null },
+  ): Promise<WorkersSummaryResponse> {
     // Get all active internal users with their time entries aggregated
     const activeUsers = await this.prisma.user.findMany({
       where: {
         companyId,
         isActive: true,
+        // Filter by userIds if provided (for team scope)
+        ...(options?.userIds && { id: { in: options.userIds } }),
       },
       select: {
         id: true,
@@ -322,6 +327,8 @@ export class AnalyticsService {
         companyId,
         user: {
           isActive: true,
+          // Filter by userIds if provided (for team scope)
+          ...(options?.userIds && { id: { in: options.userIds } }),
         },
       },
       _sum: {
@@ -335,31 +342,36 @@ export class AnalyticsService {
     });
 
     // Get all active external workers with their hours aggregated
-    const activeExternalWorkers = await this.prisma.externalWorker.findMany({
-      where: {
-        companyId,
-        isActive: true,
-      },
-      select: {
-        id: true,
-        name: true,
-        hourlyCost: true,
-      },
-    });
+    // Only include external workers if no team scope filter (full admins)
+    const activeExternalWorkers = options?.userIds
+      ? []
+      : await this.prisma.externalWorker.findMany({
+          where: {
+            companyId,
+            isActive: true,
+          },
+          select: {
+            id: true,
+            name: true,
+            hourlyCost: true,
+          },
+        });
 
-    // Get external hours grouped by external worker
-    const externalHoursEntries = await this.prisma.externalHours.groupBy({
-      by: ['externalWorkerId'],
-      where: {
-        companyId,
-        externalWorker: {
-          isActive: true,
-        },
-      },
-      _sum: {
-        minutes: true,
-      },
-    });
+    // Get external hours grouped by external worker (only if no team scope)
+    const externalHoursEntries = options?.userIds
+      ? []
+      : await this.prisma.externalHours.groupBy({
+          by: ['externalWorkerId'],
+          where: {
+            companyId,
+            externalWorker: {
+              isActive: true,
+            },
+          },
+          _sum: {
+            minutes: true,
+          },
+        });
 
     const externalMinutesMap = new Map<string, number>();
     externalHoursEntries.forEach((entry) => {

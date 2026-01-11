@@ -35,6 +35,7 @@ model Company {
   location          CompanyLocation?
   companyHolidays   CompanyHoliday[]
   userAbsences      UserAbsence[]
+  teams             Team[]
 
   @@map("companies")
 }
@@ -48,9 +49,10 @@ enum BillingPlan {
 // 2. USERS (Internal Employees & Guests)
 // ---------------------------------------------------------
 model User {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  companyId String @map("company_id") @db.Uuid
-  authId String @map("auth_id") @db.Uuid
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String  @map("company_id") @db.Uuid
+  authId    String  @map("auth_id") @db.Uuid
+  teamId    String? @map("team_id") @db.Uuid
 
   email     String  @db.VarChar(320)
   name      String  @db.VarChar(255)
@@ -71,12 +73,13 @@ model User {
   notificationSettings NotificationSettings?
 
   company Company @relation(fields: [companyId], references: [id])
+  team    Team?   @relation(fields: [teamId], references: [id])
 
   timeEntries      TimeEntry[]
   activeTimer      ActiveTimer?
-  auditLogs        AuditLog[]     @relation("Actor")
-  absences         UserAbsence[]  @relation("UserAbsences")
-  reviewedAbsences UserAbsence[]  @relation("AbsenceReviewer")
+  auditLogs        AuditLog[]    @relation("Actor")
+  absences         UserAbsence[] @relation("UserAbsences")
+  reviewedAbsences UserAbsence[] @relation("AbsenceReviewer")
 
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime? @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -91,6 +94,7 @@ model User {
 enum UserRole {
   OWNER
   ADMIN
+  TEAM_LEADER
   WORKER
   AUDITOR
 }
@@ -102,6 +106,24 @@ enum RelationType {
 }
 
 // ---------------------------------------------------------
+// 2.1. TEAMS
+// ---------------------------------------------------------
+model Team {
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String @map("company_id") @db.Uuid
+  name      String @db.VarChar(100)
+
+  company  Company   @relation(fields: [companyId], references: [id])
+  members  User[]
+  projects Project[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([companyId, name])
+  @@map("teams")
+}
+
+// ---------------------------------------------------------
 // 3. SCHEDULES & NOTIFICATIONS
 // ---------------------------------------------------------
 model WorkSchedule {
@@ -110,9 +132,10 @@ model WorkSchedule {
   companyId String  @map("company_id") @db.Uuid
   userId    String? @map("user_id") @db.Uuid
 
-  dayOfWeek Int    @map("day_of_week")
-  startTime String @map("start_time")
-  endTime   String @map("end_time")
+  dayOfWeek  Int     @map("day_of_week")
+  isWorkable Boolean @default(true) @map("is_workable")
+  startTime  String  @map("start_time")
+  endTime    String  @map("end_time")
 
   breakStartTime String? @map("break_start_time")
   breakEndTime   String? @map("break_end_time")
@@ -149,6 +172,7 @@ model Project {
   id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   companyId  String  @map("company_id") @db.Uuid
   categoryId String? @map("category_id") @db.Uuid
+  teamId     String? @map("team_id") @db.Uuid
 
   code     String  @db.VarChar(50)
   name     String  @db.VarChar(255)
@@ -156,6 +180,7 @@ model Project {
 
   company  Company          @relation(fields: [companyId], references: [id])
   category ProjectCategory? @relation(fields: [categoryId], references: [id])
+  team     Team?            @relation(fields: [teamId], references: [id])
 
   timeEntries    TimeEntry[]
   externalHours  ExternalHours[]
@@ -219,9 +244,9 @@ model ActiveTimer {
   companyId String  @map("company_id") @db.Uuid
   projectId String? @map("project_id") @db.Uuid
 
-  startTime DateTime  @map("start_time") @db.Timestamptz(6)
-  entryType EntryType @default(WORK) @map("entry_type")
-  isInOffice Boolean  @default(false) @map("is_in_office")
+  startTime  DateTime  @map("start_time") @db.Timestamptz(6)
+  entryType  EntryType @default(WORK) @map("entry_type")
+  isInOffice Boolean   @default(false) @map("is_in_office")
 
   lat       Float?
   lng       Float?
@@ -244,9 +269,9 @@ model TimeEntry {
   endTime         DateTime @map("end_time") @db.Timestamptz(6)
   durationMinutes Int      @map("duration_minutes")
 
-  entryType EntryType   @default(WORK) @map("entry_type")
-  source    EntrySource @default(WEB)
-  isInOffice Boolean    @default(false) @map("is_in_office")
+  entryType  EntryType   @default(WORK) @map("entry_type")
+  source     EntrySource @default(WEB)
+  isInOffice Boolean     @default(false) @map("is_in_office")
 
   startLat Float?  @map("start_lat")
   startLng Float?  @map("start_lng")
@@ -343,15 +368,15 @@ model ExternalHours {
 // 8. COMPANY INVITATIONS & JOIN REQUESTS
 // ---------------------------------------------------------
 model CompanyInvitation {
-  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  companyId    String       @map("company_id") @db.Uuid
-  email        String       @db.VarChar(320)
-  role         UserRole     @default(WORKER)
-  relation RelationType @default(EMPLOYEE) @map("relation_type")
-  token        String       @unique @db.VarChar(64)
-  expiresAt    DateTime     @map("expires_at") @db.Timestamptz(6)
-  usedAt       DateTime?    @map("used_at") @db.Timestamptz(6)
-  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String       @map("company_id") @db.Uuid
+  email     String       @db.VarChar(320)
+  role      UserRole     @default(WORKER)
+  relation  RelationType @default(EMPLOYEE) @map("relation_type")
+  token     String       @unique @db.VarChar(64)
+  expiresAt DateTime     @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime?    @map("used_at") @db.Timestamptz(6)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
 
   company Company @relation(fields: [companyId], references: [id])
 
@@ -467,8 +492,8 @@ model UserAbsence {
   userId    String @map("user_id") @db.Uuid
   companyId String @map("company_id") @db.Uuid
 
-  startDate DateTime @map("start_date") @db.Date
-  endDate   DateTime @map("end_date") @db.Date
+  startDate DateTime    @map("start_date") @db.Date
+  endDate   DateTime    @map("end_date") @db.Date
   type      AbsenceType
 
   workdaysCount Int @default(0) @map("workdays_count")

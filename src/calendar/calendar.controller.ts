@@ -1,27 +1,31 @@
 import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
-import { AdminGuard } from '../auth/admin.guard.js';
+import { CheckUserAccess } from '../auth/decorators/check-user-access.decorator.js';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { TeamLeaderGuard } from '../auth/team-leader.guard.js';
+import { UserAccessGuard } from '../auth/user-access.guard.js';
 import { CalendarService } from './calendar.service.js';
 import type {
-  CalendarResponse,
   CalendarMonthResponse,
+  CalendarResponse,
 } from './dto/calendar-day.dto.js';
-import { CalendarQueryDto } from './dto/calendar-query.dto.js';
 import {
-  CalendarMonthQueryDto,
   AdminCalendarMonthQueryDto,
+  CalendarMonthQueryDto,
 } from './dto/calendar-month-query.dto.js';
+import { CalendarQueryDto } from './dto/calendar-query.dto.js';
 
 type RequestWithUser = Request & { user: JwtPayload };
 
 @Controller('calendar')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, UserAccessGuard)
 export class CalendarController {
   constructor(private readonly calendarService: CalendarService) {}
 
   @Get()
+  @UseGuards(TeamLeaderGuard)
+  @CheckUserAccess({ paramName: 'userId', source: 'query' })
   async getCalendar(
     @Query() query: CalendarQueryDto,
     @Req() req: RequestWithUser,
@@ -66,8 +70,9 @@ export class CalendarController {
   }
 
   @Get('month')
-  @UseGuards(AdminGuard)
-  getCalendarByMonth(
+  @UseGuards(TeamLeaderGuard)
+  @CheckUserAccess({ paramName: 'userId', source: 'query' })
+  async getCalendarByMonth(
     @Query() query: AdminCalendarMonthQueryDto,
     @Req() req: RequestWithUser,
   ): Promise<CalendarMonthResponse> {

@@ -19,6 +19,7 @@ export interface AuthUser {
   companyName: string;
   role: UserRole;
   relation: RelationType;
+  teamId: string | null;
   isActive: boolean;
   createdAt: Date;
 }
@@ -29,6 +30,7 @@ export interface ProfileInfo {
   email: string;
   role: UserRole;
   relation: RelationType;
+  teamId: string | null;
   company: {
     id: string;
     name: string;
@@ -172,6 +174,7 @@ export class AuthService {
       email: user.email,
       role: user.role,
       relation: user.relation,
+      teamId: user.teamId,
       company: {
         id: user.company.id,
         name: user.company.name,
@@ -356,6 +359,7 @@ export class AuthService {
       email: result.email,
       role: result.role,
       relation: result.relation,
+      teamId: result.teamId,
       company: {
         id: invitation.company.id,
         name: invitation.company.name,
@@ -438,6 +442,7 @@ export class AuthService {
     name: string;
     email: string;
     companyId: string;
+    teamId: string | null;
     role: UserRole;
     relation: RelationType;
     isActive: boolean;
@@ -453,6 +458,7 @@ export class AuthService {
       companyName: user.company?.name ?? '',
       role: user.role,
       relation: user.relation,
+      teamId: user.teamId,
       isActive: user.isActive,
       createdAt: user.createdAt,
     };

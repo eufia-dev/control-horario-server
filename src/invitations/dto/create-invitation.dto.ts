@@ -5,6 +5,7 @@ export class CreateInvitationDto {
   @IsNotEmpty()
   email: string;
 
+  // Note: TEAM_LEADER cannot be assigned via invitation (requires team assignment)
   @IsEnum(['ADMIN', 'WORKER', 'AUDITOR'])
   @IsOptional()
   role?: 'ADMIN' | 'WORKER' | 'AUDITOR' = 'WORKER';

@@ -5,12 +5,31 @@ import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
 import { OnboardingGuard } from './onboarding.guard.js';
+import { TeamLeaderGuard } from './team-leader.guard.js';
+import { TeamScopeService } from './team-scope.service.js';
+import { UserAccessGuard } from './user-access.guard.js';
 
 @Global()
 @Module({
   imports: [SupabaseModule],
   controllers: [AuthController],
-  providers: [AuthService, JwtAuthGuard, AdminGuard, OnboardingGuard],
-  exports: [AuthService, JwtAuthGuard, AdminGuard, OnboardingGuard],
+  providers: [
+    AuthService,
+    JwtAuthGuard,
+    AdminGuard,
+    OnboardingGuard,
+    TeamLeaderGuard,
+    TeamScopeService,
+    UserAccessGuard,
+  ],
+  exports: [
+    AuthService,
+    JwtAuthGuard,
+    AdminGuard,
+    OnboardingGuard,
+    TeamLeaderGuard,
+    TeamScopeService,
+    UserAccessGuard,
+  ],
 })
 export class AuthModule {}

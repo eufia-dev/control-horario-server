@@ -5,6 +5,7 @@ export interface JwtPayload {
   authId: string; // Supabase Auth UID
   email: string;
   companyId: string; // Company ID
-  role: UserRole; // OWNER | ADMIN | WORKER | AUDITOR
+  role: UserRole; // OWNER | ADMIN | TEAM_LEADER | WORKER | AUDITOR
   relation: RelationType; // EMPLOYEE | CONTRACTOR | GUEST
+  teamId: string | null; // Team ID (for team-scoped access)
 }

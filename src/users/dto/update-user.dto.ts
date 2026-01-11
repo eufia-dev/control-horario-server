@@ -6,12 +6,14 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Min,
 } from 'class-validator';
 
 export enum UserRole {
   OWNER = 'OWNER',
   ADMIN = 'ADMIN',
+  TEAM_LEADER = 'TEAM_LEADER',
   WORKER = 'WORKER',
   AUDITOR = 'AUDITOR',
 }
@@ -51,4 +53,8 @@ export class UpdateUserDto {
   @IsEnum(RelationType)
   @IsOptional()
   relation: RelationType;
+
+  @IsUUID()
+  @IsOptional()
+  teamId?: string | null;
 }

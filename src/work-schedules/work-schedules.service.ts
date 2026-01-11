@@ -89,6 +89,7 @@ export class WorkSchedulesService {
     const days: WorkScheduleDayResponse[] = schedules
       .map((s) => ({
         dayOfWeek: s.dayOfWeek,
+        isWorkable: s.isWorkable,
         startTime: s.startTime,
         endTime: s.endTime,
         breakStartTime: s.breakStartTime ?? undefined,
@@ -174,15 +175,23 @@ export class WorkSchedulesService {
     companyId: string,
     dto: UpdateWorkScheduleDto,
   ): Promise<WorkScheduleResponse> {
-    // Validate all time ranges and break times
+    // Validate all time ranges and break times (only for workable days)
     for (const day of dto.days) {
-      this.validateTimeRange(day.startTime, day.endTime);
-      this.validateBreakRange(
-        day.startTime,
-        day.endTime,
-        day.breakStartTime,
-        day.breakEndTime,
-      );
+      const isWorkable = day.isWorkable !== false; // default to true
+      if (isWorkable) {
+        if (!day.startTime || !day.endTime) {
+          throw new BadRequestException(
+            `startTime and endTime are required for workable days (dayOfWeek: ${day.dayOfWeek})`,
+          );
+        }
+        this.validateTimeRange(day.startTime, day.endTime);
+        this.validateBreakRange(
+          day.startTime,
+          day.endTime,
+          day.breakStartTime,
+          day.breakEndTime,
+        );
+      }
     }
 
     // Check for duplicate dayOfWeek values
@@ -209,15 +218,20 @@ export class WorkSchedulesService {
       // Insert new defaults
       if (dto.days.length > 0) {
         await tx.workSchedule.createMany({
-          data: dto.days.map((day) => ({
-            companyId,
-            userId: null,
-            dayOfWeek: day.dayOfWeek,
-            startTime: day.startTime,
-            endTime: day.endTime,
-            breakStartTime: day.breakStartTime ?? null,
-            breakEndTime: day.breakEndTime ?? null,
-          })),
+          data: dto.days.map((day) => {
+            const isWorkable = day.isWorkable !== false;
+            return {
+              companyId,
+              userId: null,
+              dayOfWeek: day.dayOfWeek,
+              isWorkable,
+              // Use placeholder values for non-workable days
+              startTime: day.startTime ?? '00:00',
+              endTime: day.endTime ?? '00:00',
+              breakStartTime: isWorkable ? (day.breakStartTime ?? null) : null,
+              breakEndTime: isWorkable ? (day.breakEndTime ?? null) : null,
+            };
+          }),
         });
       }
     });
@@ -240,15 +254,23 @@ export class WorkSchedulesService {
       );
     }
 
-    // Validate all time ranges and break times
+    // Validate all time ranges and break times (only for workable days)
     for (const day of dto.days) {
-      this.validateTimeRange(day.startTime, day.endTime);
-      this.validateBreakRange(
-        day.startTime,
-        day.endTime,
-        day.breakStartTime,
-        day.breakEndTime,
-      );
+      const isWorkable = day.isWorkable !== false; // default to true
+      if (isWorkable) {
+        if (!day.startTime || !day.endTime) {
+          throw new BadRequestException(
+            `startTime and endTime are required for workable days (dayOfWeek: ${day.dayOfWeek})`,
+          );
+        }
+        this.validateTimeRange(day.startTime, day.endTime);
+        this.validateBreakRange(
+          day.startTime,
+          day.endTime,
+          day.breakStartTime,
+          day.breakEndTime,
+        );
+      }
     }
 
     // Check for duplicate dayOfWeek values
@@ -288,15 +310,20 @@ export class WorkSchedulesService {
       // Insert new overrides
       if (dto.days.length > 0) {
         await tx.workSchedule.createMany({
-          data: dto.days.map((day) => ({
-            companyId,
-            userId,
-            dayOfWeek: day.dayOfWeek,
-            startTime: day.startTime,
-            endTime: day.endTime,
-            breakStartTime: day.breakStartTime ?? null,
-            breakEndTime: day.breakEndTime ?? null,
-          })),
+          data: dto.days.map((day) => {
+            const isWorkable = day.isWorkable !== false;
+            return {
+              companyId,
+              userId,
+              dayOfWeek: day.dayOfWeek,
+              isWorkable,
+              // Use placeholder values for non-workable days
+              startTime: day.startTime ?? '00:00',
+              endTime: day.endTime ?? '00:00',
+              breakStartTime: isWorkable ? (day.breakStartTime ?? null) : null,
+              breakEndTime: isWorkable ? (day.breakEndTime ?? null) : null,
+            };
+          }),
         });
       }
     });
@@ -347,15 +374,23 @@ export class WorkSchedulesService {
     targetUserId: string,
     dto: UpdateWorkScheduleDto,
   ): Promise<WorkScheduleResponse> {
-    // Validate all time ranges and break times
+    // Validate all time ranges and break times (only for workable days)
     for (const day of dto.days) {
-      this.validateTimeRange(day.startTime, day.endTime);
-      this.validateBreakRange(
-        day.startTime,
-        day.endTime,
-        day.breakStartTime,
-        day.breakEndTime,
-      );
+      const isWorkable = day.isWorkable !== false; // default to true
+      if (isWorkable) {
+        if (!day.startTime || !day.endTime) {
+          throw new BadRequestException(
+            `startTime and endTime are required for workable days (dayOfWeek: ${day.dayOfWeek})`,
+          );
+        }
+        this.validateTimeRange(day.startTime, day.endTime);
+        this.validateBreakRange(
+          day.startTime,
+          day.endTime,
+          day.breakStartTime,
+          day.breakEndTime,
+        );
+      }
     }
 
     // Check for duplicate dayOfWeek values
@@ -395,15 +430,20 @@ export class WorkSchedulesService {
       // Insert new overrides
       if (dto.days.length > 0) {
         await tx.workSchedule.createMany({
-          data: dto.days.map((day) => ({
-            companyId,
-            userId: targetUserId,
-            dayOfWeek: day.dayOfWeek,
-            startTime: day.startTime,
-            endTime: day.endTime,
-            breakStartTime: day.breakStartTime ?? null,
-            breakEndTime: day.breakEndTime ?? null,
-          })),
+          data: dto.days.map((day) => {
+            const isWorkable = day.isWorkable !== false;
+            return {
+              companyId,
+              userId: targetUserId,
+              dayOfWeek: day.dayOfWeek,
+              isWorkable,
+              // Use placeholder values for non-workable days
+              startTime: day.startTime ?? '00:00',
+              endTime: day.endTime ?? '00:00',
+              breakStartTime: isWorkable ? (day.breakStartTime ?? null) : null,
+              breakEndTime: isWorkable ? (day.breakEndTime ?? null) : null,
+            };
+          }),
         });
       }
     });
