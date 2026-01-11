@@ -35,28 +35,43 @@ export class AnalyticsController {
   /**
    * GET /analytics/projects-summary
    * Returns aggregated data for all active projects
-   * Note: All users see all projects analytics (projects are company-wide)
+   * Team leaders only see projects assigned to their team,
+   * with aggregated data limited to their team members only
    */
   @Get('projects-summary')
-  getProjectsSummary(
+  async getProjectsSummary(
     @Req() req: RequestWithUser,
   ): Promise<ProjectsSummaryResponse> {
-    return this.analyticsService.getProjectsSummary(req.user.companyId);
+    const userIds = await this.teamScopeService.getUserIdsInScope(req.user);
+    // For team leaders, also filter projects by teamId
+    const teamId = this.teamScopeService.isFullAdmin(req.user)
+      ? null
+      : req.user.teamId;
+    return this.analyticsService.getProjectsSummary(req.user.companyId, {
+      userIds,
+      teamId,
+    });
   }
 
   /**
    * GET /analytics/projects/:projectId/breakdown
    * Returns per-worker breakdown for a specific project
-   * Note: All users see all project analytics (projects are company-wide)
+   * Team leaders only see their team members' contributions
    */
   @Get('projects/:projectId/breakdown')
-  getProjectBreakdown(
+  async getProjectBreakdown(
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Req() req: RequestWithUser,
   ): Promise<ProjectBreakdownResponse> {
+    const userIds = await this.teamScopeService.getUserIdsInScope(req.user);
+    // For team leaders, also verify project belongs to their team
+    const teamId = this.teamScopeService.isFullAdmin(req.user)
+      ? null
+      : req.user.teamId;
     return this.analyticsService.getProjectBreakdown(
       projectId,
       req.user.companyId,
+      { userIds, teamId },
     );
   }
 

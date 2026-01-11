@@ -35,15 +35,23 @@ export class AnalyticsService {
   /**
    * GET /analytics/projects-summary
    * Returns aggregated data for all active projects
+   * When teamId is provided (team leader case), only returns projects assigned to that team
+   * When userIds is provided, only includes time entries from those users
    */
   async getProjectsSummary(
     companyId: string,
+    options?: { userIds?: string[] | null; teamId?: string | null },
   ): Promise<ProjectsSummaryResponse> {
-    // Get all active projects for the company
+    // Check if we're filtering by team scope (team leader case)
+    const isTeamScoped = !!options?.teamId;
+
+    // Get projects based on scope
     const projects = await this.prisma.project.findMany({
       where: {
         isActive: true,
         companyId,
+        // For team leaders: only get projects assigned to their team
+        ...(options?.teamId && { teamId: options.teamId }),
       },
       select: {
         id: true,
@@ -52,41 +60,53 @@ export class AnalyticsService {
       },
     });
 
+    // Get project IDs for filtering time entries
+    const projectIds = projects.map((p) => p.id);
+
     // Get internal time entries aggregated by project
     const internalTimeEntries = await this.prisma.timeEntry.groupBy({
       by: ['projectId'],
       where: {
         companyId,
+        projectId: { in: projectIds },
         project: {
           isActive: true,
         },
+        // Filter by userIds if provided (for team scope)
+        ...(options?.userIds && { userId: { in: options.userIds } }),
       },
       _sum: {
         durationMinutes: true,
       },
     });
 
-    // Get external hours aggregated by project
-    const externalHours = await this.prisma.externalHours.groupBy({
-      by: ['projectId'],
-      where: {
-        companyId,
-        project: {
-          isActive: true,
-        },
-      },
-      _sum: {
-        minutes: true,
-      },
-    });
+    // Get external hours aggregated by project (only for full admins)
+    const externalHours = isTeamScoped
+      ? []
+      : await this.prisma.externalHours.groupBy({
+          by: ['projectId'],
+          where: {
+            companyId,
+            projectId: { in: projectIds },
+            project: {
+              isActive: true,
+            },
+          },
+          _sum: {
+            minutes: true,
+          },
+        });
 
     // Get all time entries with user hourly costs for cost calculation
     const timeEntriesWithCosts = await this.prisma.timeEntry.findMany({
       where: {
         companyId,
+        projectId: { in: projectIds },
         project: {
           isActive: true,
         },
+        // Filter by userIds if provided (for team scope)
+        ...(options?.userIds && { userId: { in: options.userIds } }),
       },
       select: {
         projectId: true,
@@ -99,24 +119,27 @@ export class AnalyticsService {
       },
     });
 
-    // Get all external hours with external hourly costs
-    const externalHoursWithCosts = await this.prisma.externalHours.findMany({
-      where: {
-        companyId,
-        project: {
-          isActive: true,
-        },
-      },
-      select: {
-        projectId: true,
-        minutes: true,
-        externalWorker: {
-          select: {
-            hourlyCost: true,
+    // Get all external hours with external hourly costs (only for full admins)
+    const externalHoursWithCosts = isTeamScoped
+      ? []
+      : await this.prisma.externalHours.findMany({
+          where: {
+            companyId,
+            projectId: { in: projectIds },
+            project: {
+              isActive: true,
+            },
           },
-        },
-      },
-    });
+          select: {
+            projectId: true,
+            minutes: true,
+            externalWorker: {
+              select: {
+                hourlyCost: true,
+              },
+            },
+          },
+        });
 
     // Create lookup maps
     const internalMinutesMap = new Map<string, number>();
@@ -183,16 +206,24 @@ export class AnalyticsService {
   /**
    * GET /analytics/projects/:projectId/breakdown
    * Returns per-worker breakdown for a specific project
+   * When teamId is provided, verifies project belongs to that team
+   * When userIds is provided, only includes workers from that list and excludes external workers
    */
   async getProjectBreakdown(
     projectId: string,
     companyId: string,
+    options?: { userIds?: string[] | null; teamId?: string | null },
   ): Promise<ProjectBreakdownResponse> {
-    // Verify project exists and belongs to company
+    // Check if we're filtering by team scope (team leader case)
+    const isTeamScoped = !!options?.teamId;
+
+    // Verify project exists, belongs to company, and (if team-scoped) belongs to the team
     const project = await this.prisma.project.findFirst({
       where: {
         id: projectId,
         companyId,
+        // For team leaders: verify project belongs to their team
+        ...(options?.teamId && { teamId: options.teamId }),
       },
     });
 
@@ -206,6 +237,8 @@ export class AnalyticsService {
       where: {
         projectId,
         companyId,
+        // Filter by userIds if provided (for team scope)
+        ...(options?.userIds && { userId: { in: options.userIds } }),
       },
       _sum: {
         durationMinutes: true,
@@ -227,30 +260,34 @@ export class AnalyticsService {
 
     const usersMap = new Map(users.map((u) => [u.id, u]));
 
-    // Get external hours grouped by external worker
-    const externalEntries = await this.prisma.externalHours.groupBy({
-      by: ['externalWorkerId'],
-      where: {
-        projectId,
-        companyId,
-      },
-      _sum: {
-        minutes: true,
-      },
-    });
+    // Get external hours grouped by external worker (only for full admins)
+    const externalEntries = isTeamScoped
+      ? []
+      : await this.prisma.externalHours.groupBy({
+          by: ['externalWorkerId'],
+          where: {
+            projectId,
+            companyId,
+          },
+          _sum: {
+            minutes: true,
+          },
+        });
 
-    // Get external worker details
+    // Get external worker details (only for full admins)
     const externalWorkerIds = externalEntries.map((e) => e.externalWorkerId);
-    const externalWorkers = await this.prisma.externalWorker.findMany({
-      where: {
-        id: { in: externalWorkerIds },
-      },
-      select: {
-        id: true,
-        name: true,
-        hourlyCost: true,
-      },
-    });
+    const externalWorkers = isTeamScoped
+      ? []
+      : await this.prisma.externalWorker.findMany({
+          where: {
+            id: { in: externalWorkerIds },
+          },
+          select: {
+            id: true,
+            name: true,
+            hourlyCost: true,
+          },
+        });
 
     const externalWorkersMap = new Map(externalWorkers.map((e) => [e.id, e]));
 
@@ -274,7 +311,7 @@ export class AnalyticsService {
       }
     });
 
-    // Add external workers
+    // Add external workers (only for full admins)
     externalEntries.forEach((entry) => {
       const externalWorker = externalWorkersMap.get(entry.externalWorkerId);
       if (externalWorker) {
