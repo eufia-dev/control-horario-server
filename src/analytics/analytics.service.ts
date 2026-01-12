@@ -1,5 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { WorkSchedulesService } from '../work-schedules/work-schedules.service.js';
+import { HolidaysService } from '../holidays/holidays.service.js';
+import { AbsencesService } from '../absences/absences.service.js';
+import { TimeEntriesService } from '../time-entries/time-entries.service.js';
 import type {
   ProjectsSummaryResponse,
   ProjectSummaryItem,
@@ -13,10 +17,27 @@ import type {
   WorkerSummaryItem,
 } from './dto/workers-summary.dto.js';
 import type { WorkerBreakdownResponse } from './dto/worker-breakdown.dto.js';
+import type {
+  PayrollSummaryResponse,
+  PayrollUserSummary,
+  PayrollSummaryTotals,
+} from './dto/payroll-summary.dto.js';
+import type {
+  WorkSchedule,
+  PublicHoliday,
+  CompanyHoliday,
+  TimeEntry,
+} from '@prisma/client';
 
 @Injectable()
 export class AnalyticsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly workSchedulesService: WorkSchedulesService,
+    private readonly holidaysService: HolidaysService,
+    private readonly absencesService: AbsencesService,
+    private readonly timeEntriesService: TimeEntriesService,
+  ) {}
 
   /**
    * Round a number to 2 decimal places
@@ -631,5 +652,322 @@ export class AnalyticsService {
       },
       projects: projectsBreakdown,
     };
+  }
+
+  /**
+   * GET /analytics/payroll-summary
+   * Returns payroll summary for all users in the given date range
+   * Includes expected vs logged hours, absence breakdowns, and cost calculations
+   */
+  async getPayrollSummary(
+    companyId: string,
+    startDate: string,
+    endDate: string,
+    options?: { userIds?: string[] | null },
+  ): Promise<PayrollSummaryResponse> {
+    const fromDate = new Date(startDate);
+    const toDate = new Date(endDate);
+
+    // Get company location for holidays
+    const location = await this.prisma.companyLocation.findUnique({
+      where: { companyId },
+    });
+
+    // Get all active users (filtered by team scope if applicable)
+    const users = await this.prisma.user.findMany({
+      where: {
+        companyId,
+        isActive: true,
+        deletedAt: null,
+        ...(options?.userIds && { id: { in: options.userIds } }),
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        hourlyCost: true,
+        createdAt: true,
+        team: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    // Fetch holidays once (shared across all users)
+    const [publicHolidays, companyHolidays] = await Promise.all([
+      location
+        ? this.holidaysService.getPublicHolidaysInRange(
+            location.regionCode,
+            fromDate,
+            toDate,
+          )
+        : Promise.resolve([]),
+      this.holidaysService.getCompanyHolidaysInRange(
+        companyId,
+        fromDate,
+        toDate,
+      ),
+    ]);
+
+    // Process each user in parallel
+    const userSummaries = await Promise.all(
+      users.map((user) =>
+        this.calculateUserPayrollSummary(
+          user,
+          companyId,
+          fromDate,
+          toDate,
+          publicHolidays,
+          companyHolidays,
+        ),
+      ),
+    );
+
+    // Calculate totals
+    const totals = this.calculatePayrollTotals(userSummaries);
+
+    // Sort by name
+    userSummaries.sort((a, b) => a.name.localeCompare(b.name));
+
+    return {
+      startDate,
+      endDate,
+      users: userSummaries,
+      totals,
+    };
+  }
+
+  /**
+   * Calculate payroll summary for a single user
+   */
+  private async calculateUserPayrollSummary(
+    user: {
+      id: string;
+      name: string;
+      email: string;
+      hourlyCost: { toNumber(): number } | number;
+      createdAt: Date;
+      team: { id: string; name: string } | null;
+    },
+    companyId: string,
+    fromDate: Date,
+    toDate: Date,
+    publicHolidays: PublicHoliday[],
+    companyHolidays: CompanyHoliday[],
+  ): Promise<PayrollUserSummary> {
+    // Fetch user-specific data in parallel
+    const [schedules, absences, timeEntries] = await Promise.all([
+      this.workSchedulesService.getWorkSchedules(companyId, user.id),
+      this.absencesService.getAbsencesInRange(
+        companyId,
+        user.id,
+        fromDate,
+        toDate,
+      ),
+      this.timeEntriesService.getTimeEntriesInRange(
+        companyId,
+        user.id,
+        fromDate,
+        toDate,
+      ),
+    ]);
+
+    // Build lookup maps
+    const publicHolidayMap = new Map<string, PublicHoliday>();
+    publicHolidays.forEach((h) => {
+      const dateKey = h.date.toISOString().split('T')[0];
+      publicHolidayMap.set(dateKey, h);
+    });
+
+    const companyHolidayMap = new Map<string, CompanyHoliday>();
+    companyHolidays.forEach((h) => {
+      const dateKey = h.date.toISOString().split('T')[0];
+      companyHolidayMap.set(dateKey, h);
+    });
+
+    const scheduleMap = new Map<number, WorkSchedule>();
+    schedules.forEach((s) => scheduleMap.set(s.dayOfWeek, s));
+
+    // Group time entries by date
+    const entriesByDate = new Map<string, TimeEntry[]>();
+    timeEntries.forEach((e) => {
+      const dateKey = e.startTime.toISOString().split('T')[0];
+      const existing = entriesByDate.get(dateKey) || [];
+      existing.push(e);
+      entriesByDate.set(dateKey, existing);
+    });
+
+    // Initialize counters
+    let expectedMinutes = 0;
+    let loggedMinutes = 0;
+    let expectedWorkDays = 0;
+    let daysWorked = 0;
+    let daysMissing = 0;
+    let vacationDays = 0;
+    let sickLeaveDays = 0;
+    let otherAbsenceDays = 0;
+
+    const today = new Date();
+    const currentDate = new Date(fromDate);
+
+    while (currentDate <= toDate) {
+      const dateKey = currentDate.toISOString().split('T')[0];
+      const dayOfWeek = (currentDate.getUTCDay() + 6) % 7; // 0 = Monday ... 6 = Sunday
+      const schedule = scheduleMap.get(dayOfWeek);
+
+      // Skip days before user was created
+      if (currentDate < user.createdAt) {
+        currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+        continue;
+      }
+
+      // Skip future days
+      if (currentDate > today) {
+        currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+        continue;
+      }
+
+      const publicHoliday = publicHolidayMap.get(dateKey);
+      const companyHoliday = companyHolidayMap.get(dateKey);
+      const absence = absences.find(
+        (a) => currentDate >= a.startDate && currentDate <= a.endDate,
+      );
+
+      const dayEntries = entriesByDate.get(dateKey) || [];
+      // Only count WORK entries toward logged time (exclude pauses)
+      const dayLoggedMinutes = dayEntries
+        .filter((e) => e.entryType === 'WORK')
+        .reduce((sum, e) => sum + e.durationMinutes, 0);
+
+      loggedMinutes += dayLoggedMinutes;
+
+      const dayExpectedMinutes =
+        this.calculateExpectedMinutesFromSchedule(schedule);
+
+      // Determine day status and count appropriately
+      if (publicHoliday || companyHoliday) {
+        // Holiday - no expected work, but logged hours count as extra
+        // Don't add to expected
+      } else if (
+        !schedule ||
+        !schedule.isWorkable ||
+        dayExpectedMinutes === 0
+      ) {
+        // Non-working day - no expected work
+      } else if (absence) {
+        // Absence on a working day
+        if (absence.type === 'VACATION') {
+          vacationDays++;
+        } else if (absence.type === 'SICK_LEAVE') {
+          sickLeaveDays++;
+        } else {
+          otherAbsenceDays++;
+        }
+        // Absences don't add to expected minutes (person is excused)
+      } else {
+        // Regular working day
+        expectedMinutes += dayExpectedMinutes;
+        expectedWorkDays++;
+
+        if (dayLoggedMinutes > 0) {
+          daysWorked++;
+        } else {
+          daysMissing++;
+        }
+      }
+
+      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+    }
+
+    const hourlyCost =
+      typeof user.hourlyCost === 'number'
+        ? user.hourlyCost
+        : user.hourlyCost.toNumber();
+
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      team: user.team,
+      hourlyCost,
+      expectedMinutes,
+      loggedMinutes,
+      differenceMinutes: loggedMinutes - expectedMinutes,
+      expectedWorkDays,
+      daysWorked,
+      daysMissing,
+      vacationDays,
+      sickLeaveDays,
+      otherAbsenceDays,
+      totalCost: this.calculateCost(loggedMinutes, hourlyCost),
+    };
+  }
+
+  /**
+   * Calculate expected minutes from a work schedule
+   */
+  private calculateExpectedMinutesFromSchedule(
+    schedule?: WorkSchedule,
+  ): number {
+    if (!schedule || !schedule.isWorkable) {
+      return 0;
+    }
+
+    const [startHour, startMin] = schedule.startTime.split(':').map(Number);
+    const [endHour, endMin] = schedule.endTime.split(':').map(Number);
+
+    const startMinutes = startHour * 60 + startMin;
+    const endMinutes = endHour * 60 + endMin;
+
+    let totalMinutes = Math.max(0, endMinutes - startMinutes);
+
+    // Subtract scheduled break duration if present
+    if (schedule.breakStartTime && schedule.breakEndTime) {
+      const [breakStartHour, breakStartMin] = schedule.breakStartTime
+        .split(':')
+        .map(Number);
+      const [breakEndHour, breakEndMin] = schedule.breakEndTime
+        .split(':')
+        .map(Number);
+
+      const breakStartMinutes = breakStartHour * 60 + breakStartMin;
+      const breakEndMinutes = breakEndHour * 60 + breakEndMin;
+
+      const breakDuration = Math.max(0, breakEndMinutes - breakStartMinutes);
+      totalMinutes = Math.max(0, totalMinutes - breakDuration);
+    }
+
+    return totalMinutes;
+  }
+
+  /**
+   * Calculate aggregate totals across all users
+   */
+  private calculatePayrollTotals(
+    userSummaries: PayrollUserSummary[],
+  ): PayrollSummaryTotals {
+    return userSummaries.reduce(
+      (totals, user) => ({
+        expectedMinutes: totals.expectedMinutes + user.expectedMinutes,
+        loggedMinutes: totals.loggedMinutes + user.loggedMinutes,
+        differenceMinutes: totals.differenceMinutes + user.differenceMinutes,
+        vacationDays: totals.vacationDays + user.vacationDays,
+        sickLeaveDays: totals.sickLeaveDays + user.sickLeaveDays,
+        otherAbsenceDays: totals.otherAbsenceDays + user.otherAbsenceDays,
+        totalCost: this.roundToTwoDecimals(totals.totalCost + user.totalCost),
+      }),
+      {
+        expectedMinutes: 0,
+        loggedMinutes: 0,
+        differenceMinutes: 0,
+        vacationDays: 0,
+        sickLeaveDays: 0,
+        otherAbsenceDays: 0,
+        totalCost: 0,
+      },
+    );
   }
 }

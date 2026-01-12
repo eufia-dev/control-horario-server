@@ -21,6 +21,10 @@ import {
   type WorkerBreakdownResponse,
 } from './dto/worker-breakdown.dto.js';
 import type { WorkersSummaryResponse } from './dto/workers-summary.dto.js';
+import {
+  PayrollSummaryQueryDto,
+  type PayrollSummaryResponse,
+} from './dto/payroll-summary.dto.js';
 
 type RequestWithUser = Request & { user: JwtPayload };
 
@@ -128,6 +132,26 @@ export class AnalyticsController {
       workerId,
       query.type,
       req.user.companyId,
+    );
+  }
+
+  /**
+   * GET /analytics/payroll-summary
+   * Returns payroll summary for all users in the given date range
+   * Includes expected vs logged hours, absence breakdowns, and cost calculations
+   * Team leaders only see their team members
+   */
+  @Get('payroll-summary')
+  async getPayrollSummary(
+    @Query() query: PayrollSummaryQueryDto,
+    @Req() req: RequestWithUser,
+  ): Promise<PayrollSummaryResponse> {
+    const userIds = await this.teamScopeService.getUserIdsInScope(req.user);
+    return this.analyticsService.getPayrollSummary(
+      req.user.companyId,
+      query.startDate,
+      query.endDate,
+      { userIds },
     );
   }
 }
