@@ -85,7 +85,9 @@ export class InvitationsService {
     // Generate unique token and set expiry (7 days)
     const token = this.generateToken();
     const expiresAt = new Date();
-    expiresAt.setUTCDate(expiresAt.getUTCDay() + 7);
+    console.log(expiresAt);
+    expiresAt.setUTCDate(expiresAt.getUTCDate() + 7);
+    console.log(expiresAt);
 
     const invitation = await this.prisma.$transaction(async (tx) => {
       const created = await tx.companyInvitation.create({
@@ -193,7 +195,7 @@ export class InvitationsService {
       // Generate new token and extend expiry
       const token = this.generateToken();
       const expiresAt = new Date();
-      expiresAt.setUTCDate(expiresAt.getUTCDay() + 7);
+      expiresAt.setUTCDate(expiresAt.getUTCDate() + 7);
 
       const updatedInvitation = await tx.companyInvitation.update({
         where: { id },
