@@ -23,4 +23,8 @@ export class UpdateProjectDto {
   @IsUUID()
   @IsOptional()
   categoryId?: string;
+
+  @IsUUID()
+  @IsOptional()
+  teamId?: string | null;
 }

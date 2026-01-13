@@ -136,6 +136,16 @@ export class ProjectsService {
       }
     }
 
+    // Determine teamId for update
+    let teamId: string | null | undefined = undefined;
+    if (user.role === 'TEAM_LEADER') {
+      // TEAM_LEADER cannot change teamId - projects stay in their team
+      teamId = undefined;
+    } else if (updateProjectDto.teamId !== undefined) {
+      // Admin/Owner can set or clear teamId
+      teamId = updateProjectDto.teamId;
+    }
+
     const project = await this.prisma.project.update({
       where: { id },
       data: {
@@ -143,6 +153,7 @@ export class ProjectsService {
         code: updateProjectDto.code,
         isActive: updateProjectDto.isActive,
         categoryId: updateProjectDto.categoryId,
+        ...(teamId !== undefined && { teamId }),
       },
       include: {
         team: {
