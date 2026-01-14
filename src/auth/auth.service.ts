@@ -151,6 +151,29 @@ export class AuthService {
   }
 
   /**
+   * Save the user's current profile preference to Supabase user metadata
+   */
+  async saveProfilePreference(
+    authId: string,
+    profileId: string,
+  ): Promise<void> {
+    await this.supabase.updateUser(authId, {
+      user_metadata: { currentProfileId: profileId },
+    });
+  }
+
+  /**
+   * Get the user's stored profile preference from Supabase user metadata
+   */
+  async getStoredProfilePreference(authId: string): Promise<string | null> {
+    const metadata = await this.supabase.getUserMetadata(authId);
+    if (!metadata || typeof metadata.currentProfileId !== 'string') {
+      return null;
+    }
+    return metadata.currentProfileId;
+  }
+
+  /**
    * Get all profiles (user records) for a given Supabase authId
    * Returns all active, non-deleted profiles with their company info
    */
@@ -186,6 +209,34 @@ export class AuthService {
         logoUrl: user.company.logoUrl,
       },
     }));
+  }
+
+  /**
+   * Get all profiles with the current profile ID preference
+   * Falls back to first profile if no preference is stored or if stored preference is invalid
+   */
+  async getAllProfilesWithCurrentId(
+    authId: string,
+  ): Promise<{ profiles: ProfileInfo[]; currentProfileId: string | null }> {
+    const [profiles, storedPreference] = await Promise.all([
+      this.getAllProfiles(authId),
+      this.getStoredProfilePreference(authId),
+    ]);
+
+    if (profiles.length === 0) {
+      return { profiles, currentProfileId: null };
+    }
+
+    // Check if stored preference is valid (exists in the profiles list)
+    const isStoredPreferenceValid =
+      storedPreference && profiles.some((p) => p.id === storedPreference);
+
+    // Use stored preference if valid, otherwise fall back to first profile
+    const currentProfileId = isStoredPreferenceValid
+      ? storedPreference
+      : profiles[0].id;
+
+    return { profiles, currentProfileId };
   }
 
   /**

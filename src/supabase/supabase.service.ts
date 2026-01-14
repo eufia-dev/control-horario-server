@@ -102,4 +102,20 @@ export class SupabaseService {
       email: data.user.email ?? params.email,
     };
   }
+
+  async getUserMetadata(
+    authId: string,
+  ): Promise<Record<string, unknown> | null> {
+    const { data, error } =
+      await this.adminClient.auth.admin.getUserById(authId);
+
+    if (error) {
+      this.logger.error(
+        `Error al obtener usuario de Supabase: ${error.message}`,
+      );
+      return null;
+    }
+
+    return data.user?.user_metadata ?? null;
+  }
 }

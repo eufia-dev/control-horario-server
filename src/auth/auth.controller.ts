@@ -31,11 +31,12 @@ export class AuthController {
   @Get('profiles')
   async getProfiles(
     @Req() req: RequestWithUser,
-  ): Promise<{ profiles: ProfileInfo[]; currentProfileId: string }> {
-    const profiles = await this.authService.getAllProfiles(req.user.authId);
+  ): Promise<{ profiles: ProfileInfo[]; currentProfileId: string | null }> {
+    const { profiles, currentProfileId } =
+      await this.authService.getAllProfilesWithCurrentId(req.user.authId);
     return {
       profiles,
-      currentProfileId: req.user.sub,
+      currentProfileId,
     };
   }
 
@@ -58,6 +59,9 @@ export class AuthController {
         'Perfil no válido o no pertenece a este usuario',
       );
     }
+
+    // Save the profile preference to Supabase user metadata
+    await this.authService.saveProfilePreference(req.user.authId, profileId);
 
     return { profile: targetProfile };
   }
