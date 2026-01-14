@@ -861,7 +861,7 @@ export class AnalyticsService {
         // Absence on a working day
         if (absence.type === 'VACATION') {
           vacationDays++;
-        } else if (absence.type === 'SICK_LEAVE') {
+        } else if (absence.type.startsWith('SICK_LEAVE')) {
           sickLeaveDays++;
         } else {
           otherAbsenceDays++;

@@ -50,6 +50,25 @@ export interface AbsenceStats {
   cancelled: number;
 }
 
+/**
+ * Spanish display names for absence types
+ */
+const ABSENCE_TYPE_NAMES: Record<AbsenceType, string> = {
+  [AbsenceType.VACATION]: 'Vacaciones',
+  [AbsenceType.SICK_LEAVE_COMMON]: 'Baja por enfermedad común',
+  [AbsenceType.SICK_LEAVE_PROFESSIONAL]: 'Baja por enfermedad profesional',
+  [AbsenceType.ACCIDENT_LEAVE_NON_WORK]: 'Baja por accidente no laboral',
+  [AbsenceType.ACCIDENT_LEAVE_WORK]: 'Baja por accidente de trabajo',
+  [AbsenceType.PARENTAL_LEAVE]: 'Maternidad o paternidad',
+  [AbsenceType.NURSING_LEAVE]: 'Lactancia',
+  [AbsenceType.MARRIAGE]: 'Matrimonio',
+  [AbsenceType.MOVING]: 'Mudanza',
+  [AbsenceType.FAMILY_BEREAVEMENT_HOSPITALIZATION]:
+    'Fallecimiento u hospitalización de familiar',
+  [AbsenceType.TRAINING]: 'Formación',
+  [AbsenceType.OTHER]: 'Otro (especificar en comentario)',
+};
+
 export interface GetAllAbsencesOptions {
   status?: AbsenceStatus;
   userId?: string;
@@ -71,20 +90,9 @@ export class AbsencesService {
    * Get absence type enum values for frontend dropdown
    */
   getTypes(): AbsenceTypeOption[] {
-    const typeNames: Record<AbsenceType, string> = {
-      [AbsenceType.VACATION]: 'Vacaciones',
-      [AbsenceType.SICK_LEAVE]: 'Baja por enfermedad',
-      [AbsenceType.PERSONAL_LEAVE]: 'Asuntos propios',
-      [AbsenceType.MATERNITY]: 'Maternidad',
-      [AbsenceType.PATERNITY]: 'Paternidad',
-      [AbsenceType.UNPAID_LEAVE]: 'Excedencia',
-      [AbsenceType.TRAINING]: 'Formación',
-      [AbsenceType.OTHER]: 'Otro',
-    };
-
     return Object.values(AbsenceType).map((value) => ({
       value,
-      name: typeNames[value],
+      name: ABSENCE_TYPE_NAMES[value],
     }));
   }
 
@@ -92,17 +100,7 @@ export class AbsencesService {
    * Get absence type name in Spanish
    */
   private getAbsenceTypeName(type: AbsenceType): string {
-    const typeNames: Record<AbsenceType, string> = {
-      [AbsenceType.VACATION]: 'Vacaciones',
-      [AbsenceType.SICK_LEAVE]: 'Baja por enfermedad',
-      [AbsenceType.PERSONAL_LEAVE]: 'Asuntos propios',
-      [AbsenceType.MATERNITY]: 'Maternidad',
-      [AbsenceType.PATERNITY]: 'Paternidad',
-      [AbsenceType.UNPAID_LEAVE]: 'Excedencia',
-      [AbsenceType.TRAINING]: 'Formación',
-      [AbsenceType.OTHER]: 'Otro',
-    };
-    return typeNames[type];
+    return ABSENCE_TYPE_NAMES[type];
   }
 
   // ============================================
