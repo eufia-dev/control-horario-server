@@ -25,7 +25,7 @@ export class WorkScheduleDayDto {
   @IsBoolean()
   isWorkable?: boolean; // defaults to true if not provided
 
-  @ValidateIf((o) => o.isWorkable !== false)
+  @ValidateIf((o: WorkScheduleDayDto) => o.isWorkable !== false)
   @IsString()
   @IsNotEmpty()
   @Matches(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/, {
@@ -33,7 +33,7 @@ export class WorkScheduleDayDto {
   })
   startTime?: string; // HH:mm format, required when isWorkable !== false
 
-  @ValidateIf((o) => o.isWorkable !== false)
+  @ValidateIf((o: WorkScheduleDayDto) => o.isWorkable !== false)
   @IsString()
   @IsNotEmpty()
   @Matches(/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/, {

@@ -22,6 +22,7 @@ export interface OnboardingStatus {
     companyName: string;
     role: UserRole;
     relation: RelationType;
+    teamId: string | null;
   };
   pendingInvitations?: {
     id: string;
@@ -68,6 +69,7 @@ export class OnboardingService {
           companyName: existingUser.company.name,
           role: existingUser.role,
           relation: existingUser.relation,
+          teamId: existingUser.teamId,
         },
       };
     }
@@ -251,6 +253,7 @@ export class OnboardingService {
         companyName: result.company.name,
         role: result.user.role,
         relation: result.user.relation,
+        teamId: result.user.teamId,
       },
     };
   }
@@ -389,6 +392,7 @@ export class OnboardingService {
         companyName: result.company.name,
         role: result.user.role,
         relation: result.user.relation,
+        teamId: result.user.teamId,
       },
     };
   }
