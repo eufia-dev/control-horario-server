@@ -19,6 +19,7 @@ model Company {
 
   billingPlan           BillingPlan @default(BASIC) @map("billing_plan")
   allowUserEditSchedule Boolean     @default(false) @map("allow_user_edit_schedule")
+  hasProjectsFeature    Boolean     @default(false) @map("has_projects_feature")
   inviteCode            String?     @unique @map("invite_code") @db.VarChar(20)
 
   // Relations

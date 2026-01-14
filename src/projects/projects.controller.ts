@@ -13,6 +13,7 @@ import {
 import type { Request } from 'express';
 import { TeamLeaderGuard } from '../auth/team-leader.guard.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { ProjectsFeatureGuard } from '../auth/projects-feature.guard.js';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
 import { CreateProjectDto } from './dto/create-project.dto.js';
 import { UpdateProjectDto } from './dto/update-project.dto.js';
@@ -25,7 +26,7 @@ import {
 type RequestWithUser = Request & { user: JwtPayload };
 
 @Controller('projects')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ProjectsFeatureGuard)
 export class ProjectsController {
   constructor(private readonly projectsService: ProjectsService) {}
 

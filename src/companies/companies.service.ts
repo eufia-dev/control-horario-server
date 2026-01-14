@@ -17,6 +17,7 @@ export interface CompanyResponse {
   logoUrl: string | null;
   billingPlan: BillingPlan;
   allowUserEditSchedule: boolean;
+  hasProjectsFeature: boolean;
   inviteCode: string | null;
   createdAt: Date;
 }
@@ -241,6 +242,7 @@ export class CompaniesService {
       logoUrl: company.logoUrl,
       billingPlan: company.billingPlan,
       allowUserEditSchedule: company.allowUserEditSchedule,
+      hasProjectsFeature: company.hasProjectsFeature,
       inviteCode: company.inviteCode,
       createdAt: company.createdAt,
     };

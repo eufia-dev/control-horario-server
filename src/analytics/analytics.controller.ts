@@ -12,6 +12,7 @@ import type { Request } from 'express';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { TeamLeaderGuard } from '../auth/team-leader.guard.js';
+import { ProjectsFeatureGuard } from '../auth/projects-feature.guard.js';
 import { TeamScopeService } from '../auth/team-scope.service.js';
 import { AnalyticsService } from './analytics.service.js';
 import type { ProjectBreakdownResponse } from './dto/project-breakdown.dto.js';
@@ -43,6 +44,7 @@ export class AnalyticsController {
    * with aggregated data limited to their team members only
    */
   @Get('projects-summary')
+  @UseGuards(ProjectsFeatureGuard)
   async getProjectsSummary(
     @Req() req: RequestWithUser,
   ): Promise<ProjectsSummaryResponse> {
@@ -63,6 +65,7 @@ export class AnalyticsController {
    * Team leaders only see their team members' contributions
    */
   @Get('projects/:projectId/breakdown')
+  @UseGuards(ProjectsFeatureGuard)
   async getProjectBreakdown(
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Req() req: RequestWithUser,
@@ -99,8 +102,10 @@ export class AnalyticsController {
    * Returns per-project breakdown for a specific worker
    * Query param: type (required) - 'internal' or 'external'
    * Team leaders can only access their team members
+   * Requires projects feature to be enabled
    */
   @Get('workers/:workerId/breakdown')
+  @UseGuards(ProjectsFeatureGuard)
   async getWorkerBreakdown(
     @Param('workerId', ParseUUIDPipe) workerId: string,
     @Query() query: WorkerBreakdownQueryDto,

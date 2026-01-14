@@ -13,6 +13,7 @@ import {
 import type { Request } from 'express';
 import { AdminGuard } from '../auth/admin.guard.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { ProjectsFeatureGuard } from '../auth/projects-feature.guard.js';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
 import { CreateExternalDto } from './dto/create-external.dto.js';
 import { CreateExternalHoursDto } from './dto/create-external-hours.dto.js';
@@ -29,7 +30,7 @@ import {
 type RequestWithUser = Request & { user: JwtPayload };
 
 @Controller('externals')
-@UseGuards(JwtAuthGuard, AdminGuard)
+@UseGuards(JwtAuthGuard, AdminGuard, ProjectsFeatureGuard)
 export class ExternalsController {
   constructor(private readonly externalsService: ExternalsService) {}
 

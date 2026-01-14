@@ -8,4 +8,5 @@ export interface JwtPayload {
   role: UserRole; // OWNER | ADMIN | TEAM_LEADER | WORKER | AUDITOR
   relation: RelationType; // EMPLOYEE | CONTRACTOR | GUEST
   teamId: string | null; // Team ID (for team-scoped access)
+  hasProjectsFeature: boolean; // Whether company has projects feature enabled
 }

@@ -25,6 +25,7 @@ export interface AuthUser {
   teamId: string | null;
   isActive: boolean;
   createdAt: Date;
+  hasProjectsFeature: boolean;
 }
 
 export interface ProfileInfo {
@@ -512,7 +513,7 @@ export class AuthService {
     relation: RelationType;
     isActive: boolean;
     createdAt: Date;
-    company?: { name: string } | null;
+    company?: { name: string; hasProjectsFeature?: boolean } | null;
   }): AuthUser {
     return {
       id: user.id,
@@ -526,6 +527,7 @@ export class AuthService {
       teamId: user.teamId,
       isActive: user.isActive,
       createdAt: user.createdAt,
+      hasProjectsFeature: user.company?.hasProjectsFeature ?? false,
     };
   }
 }
