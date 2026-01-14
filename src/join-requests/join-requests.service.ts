@@ -1,9 +1,11 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { EmailService } from '../email/email.service.js';
 import { ApproveRequestDto } from './dto/index.js';
 import {
   JoinRequestStatus,
@@ -43,7 +45,12 @@ export interface ApproveOptionsResponse {
 
 @Injectable()
 export class JoinRequestsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(JoinRequestsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly emailService: EmailService,
+  ) {}
 
   /**
    * List all join requests for a company
@@ -270,6 +277,63 @@ export class JoinRequestsService {
         name: roleNames[value],
       })),
     };
+  }
+
+  /**
+   * Notify company admins of a new join request
+   */
+  async notifyAdminsOfJoinRequest(
+    companyId: string,
+    requesterName: string,
+    requesterEmail: string,
+  ): Promise<void> {
+    // Get company name
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { name: true },
+    });
+
+    if (!company) {
+      this.logger.warn(
+        `Cannot send join request notification: company ${companyId} not found`,
+      );
+      return;
+    }
+
+    // Get all admins (OWNER or ADMIN roles)
+    const admins = await this.prisma.user.findMany({
+      where: {
+        companyId,
+        role: { in: ['OWNER', 'ADMIN'] },
+        deletedAt: null,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+      },
+    });
+
+    if (admins.length === 0) {
+      this.logger.warn(
+        `No admins found for company ${companyId} to notify about join request`,
+      );
+      return;
+    }
+
+    // Send email to each admin
+    const emailPromises = admins.map((admin) =>
+      this.emailService.sendJoinRequestNotification({
+        to: admin.email,
+        adminName: admin.name,
+        requesterName,
+        requesterEmail,
+        companyName: company.name,
+      }),
+    );
+
+    await Promise.allSettled(emailPromises);
   }
 
   private toResponse(request: {

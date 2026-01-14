@@ -1,5 +1,6 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, Module, forwardRef } from '@nestjs/common';
 import { SupabaseModule } from '../supabase/supabase.module.js';
+import { JoinRequestsModule } from '../join-requests/join-requests.module.js';
 import { AdminGuard } from './admin.guard.js';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
@@ -11,7 +12,7 @@ import { UserAccessGuard } from './user-access.guard.js';
 
 @Global()
 @Module({
-  imports: [SupabaseModule],
+  imports: [SupabaseModule, forwardRef(() => JoinRequestsModule)],
   controllers: [AuthController],
   providers: [
     AuthService,

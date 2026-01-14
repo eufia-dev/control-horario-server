@@ -50,6 +50,14 @@ interface AbsenceReviewNotificationPayload {
   notes: string | null;
 }
 
+interface JoinRequestNotificationPayload {
+  to: string;
+  adminName: string;
+  requesterName: string;
+  requesterEmail: string;
+  companyName: string;
+}
+
 @Injectable()
 export class EmailService {
   private transporter?: Transporter<SentMessageInfo>;
@@ -377,6 +385,63 @@ export class EmailService {
         error instanceof Error ? error.message : JSON.stringify(error);
       throw new InternalServerErrorException(
         `No se pudo enviar el correo de notificación de revisión de ausencia. Detalle: ${message}`,
+      );
+    }
+  }
+
+  async sendJoinRequestNotification(
+    payload: JoinRequestNotificationPayload,
+  ): Promise<void> {
+    const from = process.env.SMTP_USER ?? '';
+    const transporter = this.getTransporter();
+
+    const frontendUrl = process.env.FRONTEND_ORIGIN?.replace(/\/$/, '') || '';
+
+    const subject = `Nueva solicitud de acceso - ${payload.companyName}`;
+
+    const text = [
+      `Hola ${payload.adminName},`,
+      '',
+      `${payload.requesterName} ha solicitado unirse a ${payload.companyName}:`,
+      `Nombre: ${payload.requesterName}`,
+      `Email: ${payload.requesterEmail}`,
+      '',
+      frontendUrl
+        ? `Accede a la plataforma para revisar la solicitud: ${frontendUrl}`
+        : 'Accede a la plataforma para revisar la solicitud.',
+      '',
+      'Saludos cordiales,',
+      'Equipo Eufia',
+    ].join('\n');
+
+    const html = `
+      <p>Hola <strong>${payload.adminName}</strong>,</p>
+      <p><strong>${payload.requesterName}</strong> ha solicitado unirse a <strong>${payload.companyName}</strong>:</p>
+      <ul>
+        <li><strong>Nombre:</strong> ${payload.requesterName}</li>
+        <li><strong>Email:</strong> ${payload.requesterEmail}</li>
+      </ul>
+      <p>${
+        frontendUrl
+          ? `<a href="${frontendUrl}">Accede a la plataforma para revisar la solicitud</a>.`
+          : 'Accede a la plataforma para revisar la solicitud.'
+      }</p>
+      <p>Saludos cordiales,<br/>Equipo Eufia</p>
+    `;
+
+    try {
+      await transporter.sendMail({
+        from,
+        to: payload.to,
+        subject,
+        text,
+        html,
+      });
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : JSON.stringify(error);
+      throw new InternalServerErrorException(
+        `No se pudo enviar el correo de notificación de solicitud de acceso. Detalle: ${message}`,
       );
     }
   }

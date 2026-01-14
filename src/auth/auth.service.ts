@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ConflictException,
+  forwardRef,
+  Inject,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -8,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SupabaseService } from '../supabase/supabase.service.js';
+import { JoinRequestsService } from '../join-requests/join-requests.service.js';
 import type { UserRole, RelationType } from '@prisma/client';
 
 export interface AuthUser {
@@ -78,6 +81,8 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly supabase: SupabaseService,
+    @Inject(forwardRef(() => JoinRequestsService))
+    private readonly joinRequestsService: JoinRequestsService,
   ) {}
 
   /**
@@ -429,6 +434,15 @@ export class AuthService {
         name,
       },
     });
+
+    // Notify admins of the new join request (non-blocking)
+    this.joinRequestsService
+      .notifyAdminsOfJoinRequest(company.id, name, email)
+      .catch((error: unknown) => {
+        this.logger.error(
+          `Failed to send join request notification: ${String(error)}`,
+        );
+      });
 
     return {
       companyName: company.name,

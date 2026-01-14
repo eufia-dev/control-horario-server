@@ -7,9 +7,9 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { HolidaysService } from '../holidays/holidays.service.js';
-import { SupabaseService } from '../supabase/supabase.service.js';
+import { JoinRequestsService } from '../join-requests/join-requests.service.js';
 import { CreateCompanyDto, RequestJoinDto } from './dto/index.js';
-import type { RelationType, User, UserRole } from '@prisma/client';
+import type { JoinRequest, RelationType, User, UserRole } from '@prisma/client';
 import { randomBytes } from 'crypto';
 
 export interface OnboardingStatus {
@@ -45,7 +45,7 @@ export class OnboardingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly holidaysService: HolidaysService,
-    private readonly supabaseService: SupabaseService,
+    private readonly joinRequestsService: JoinRequestsService,
   ) {}
 
   /**
@@ -454,6 +454,8 @@ export class OnboardingService {
       },
     });
 
+    let joinRequest: JoinRequest | null = null;
+
     if (existingRequest) {
       if (existingRequest.status === 'PENDING') {
         throw new ConflictException(
@@ -465,16 +467,38 @@ export class OnboardingService {
           'Tu solicitud anterior fue rechazada. Contacta con el administrador.',
         );
       }
+
+      if (existingRequest.status === 'APPROVED') {
+        joinRequest = await this.prisma.joinRequest.update({
+          where: { id: existingRequest.id },
+          data: {
+            email: email.toLowerCase(),
+            name: dto.name,
+            status: 'PENDING',
+            reviewedAt: null,
+            reviewedById: null,
+          },
+        });
+      }
     }
 
-    const joinRequest = await this.prisma.joinRequest.create({
-      data: {
-        companyId: dto.companyId,
-        authId,
-        email: email.toLowerCase(),
-        name: dto.name,
-      },
-    });
+    if (!joinRequest) {
+      joinRequest = await this.prisma.joinRequest.create({
+        data: {
+          companyId: dto.companyId,
+          authId,
+          email: email.toLowerCase(),
+          name: dto.name,
+        },
+      });
+    }
+
+    // Notify admins of the new join request (non-blocking)
+    this.joinRequestsService
+      .notifyAdminsOfJoinRequest(dto.companyId, dto.name, email)
+      .catch((error) => {
+        this.logger.error(`Failed to send join request notification: ${error}`);
+      });
 
     return {
       id: joinRequest.id,
