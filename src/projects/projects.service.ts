@@ -24,6 +24,8 @@ export interface ProjectResponse {
   categoryId: string | null;
   teamId: string | null;
   team: ProjectTeamInfo | null;
+  delegation: string | null;
+  clientName: string | null;
   createdAt: Date;
 }
 
@@ -100,6 +102,8 @@ export class ProjectsService {
         companyId,
         categoryId: createProjectDto.categoryId,
         teamId,
+        delegation: createProjectDto.delegation,
+        clientName: createProjectDto.clientName,
       },
       include: {
         team: {
@@ -153,6 +157,8 @@ export class ProjectsService {
         code: updateProjectDto.code,
         isActive: updateProjectDto.isActive,
         categoryId: updateProjectDto.categoryId,
+        delegation: updateProjectDto.delegation,
+        clientName: updateProjectDto.clientName,
         ...(teamId !== undefined && { teamId }),
       },
       include: {
@@ -207,6 +213,8 @@ export class ProjectsService {
       categoryId: project.categoryId,
       teamId: project.teamId,
       team: project.team ?? null,
+      delegation: project.delegation,
+      clientName: project.clientName,
       createdAt: project.createdAt,
     };
   }

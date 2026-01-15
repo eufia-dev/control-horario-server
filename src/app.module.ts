@@ -8,7 +8,6 @@ import { AuthModule } from './auth/auth.module.js';
 import { ProjectsModule } from './projects/projects.module.js';
 import { CompaniesModule } from './companies/companies.module.js';
 import { UsersModule } from './users/users.module.js';
-import { ExternalsModule } from './externals/externals.module.js';
 import { TimeEntriesModule } from './time-entries/time-entries.module.js';
 import { AnalyticsModule } from './analytics/analytics.module.js';
 import { OnboardingModule } from './onboarding/onboarding.module.js';
@@ -22,6 +21,7 @@ import { LocationsModule } from './locations/locations.module.js';
 import { WorkSchedulesModule } from './work-schedules/work-schedules.module.js';
 import { RemindersModule } from './reminders/reminders.module.js';
 import { TeamsModule } from './teams/teams.module.js';
+import { CashFlowModule } from './cash-flow/cash-flow.module.js';
 
 @Module({
   imports: [
@@ -32,7 +32,6 @@ import { TeamsModule } from './teams/teams.module.js';
     ProjectsModule,
     CompaniesModule,
     UsersModule,
-    ExternalsModule,
     TimeEntriesModule,
     AnalyticsModule,
     OnboardingModule,
@@ -46,6 +45,7 @@ import { TeamsModule } from './teams/teams.module.js';
     WorkSchedulesModule,
     RemindersModule,
     TeamsModule,
+    CashFlowModule,
   ],
   controllers: [AppController],
   providers: [AppService],

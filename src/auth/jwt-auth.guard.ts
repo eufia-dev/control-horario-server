@@ -51,6 +51,7 @@ export class JwtAuthGuard implements CanActivate {
         relation: authUser.relation,
         teamId: authUser.teamId,
         hasProjectsFeature: authUser.hasProjectsFeature,
+        hasCashFlowFeature: authUser.hasCashFlowFeature,
       };
 
       return true;

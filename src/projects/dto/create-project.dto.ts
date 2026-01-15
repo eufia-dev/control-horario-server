@@ -1,4 +1,10 @@
-import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateProjectDto {
   @IsString()
@@ -15,4 +21,14 @@ export class CreateProjectDto {
   @IsUUID()
   @IsOptional()
   teamId?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  delegation?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  clientName?: string;
 }

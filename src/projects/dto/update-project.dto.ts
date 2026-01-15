@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  MaxLength,
 } from 'class-validator';
 
 export class UpdateProjectDto {
@@ -27,4 +28,14 @@ export class UpdateProjectDto {
   @IsUUID()
   @IsOptional()
   teamId?: string | null;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  delegation?: string | null;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  clientName?: string | null;
 }

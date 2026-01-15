@@ -63,9 +63,6 @@ export class AnalyticsService {
     companyId: string,
     options?: { userIds?: string[] | null; teamId?: string | null },
   ): Promise<ProjectsSummaryResponse> {
-    // Check if we're filtering by team scope (team leader case)
-    const isTeamScoped = !!options?.teamId;
-
     // Get projects based on scope
     const projects = await this.prisma.project.findMany({
       where: {
@@ -101,23 +98,6 @@ export class AnalyticsService {
       },
     });
 
-    // Get external hours aggregated by project (only for full admins)
-    const externalHours = isTeamScoped
-      ? []
-      : await this.prisma.externalHours.groupBy({
-          by: ['projectId'],
-          where: {
-            companyId,
-            projectId: { in: projectIds },
-            project: {
-              isActive: true,
-            },
-          },
-          _sum: {
-            minutes: true,
-          },
-        });
-
     // Get all time entries with user hourly costs for cost calculation
     const timeEntriesWithCosts = await this.prisma.timeEntry.findMany({
       where: {
@@ -140,28 +120,6 @@ export class AnalyticsService {
       },
     });
 
-    // Get all external hours with external hourly costs (only for full admins)
-    const externalHoursWithCosts = isTeamScoped
-      ? []
-      : await this.prisma.externalHours.findMany({
-          where: {
-            companyId,
-            projectId: { in: projectIds },
-            project: {
-              isActive: true,
-            },
-          },
-          select: {
-            projectId: true,
-            minutes: true,
-            externalWorker: {
-              select: {
-                hourlyCost: true,
-              },
-            },
-          },
-        });
-
     // Create lookup maps
     const internalMinutesMap = new Map<string, number>();
     internalTimeEntries.forEach((entry) => {
@@ -171,11 +129,6 @@ export class AnalyticsService {
           entry._sum.durationMinutes || 0,
         );
       }
-    });
-
-    const externalMinutesMap = new Map<string, number>();
-    externalHours.forEach((entry) => {
-      externalMinutesMap.set(entry.projectId, entry._sum.minutes || 0);
     });
 
     // Calculate internal costs per project
@@ -189,32 +142,21 @@ export class AnalyticsService {
       }
     });
 
-    // Calculate external costs per project
-    const externalCostMap = new Map<string, number>();
-    externalHoursWithCosts.forEach((entry) => {
-      const currentCost = externalCostMap.get(entry.projectId) || 0;
-      const entryCost =
-        (entry.minutes / 60) * Number(entry.externalWorker.hourlyCost);
-      externalCostMap.set(entry.projectId, currentCost + entryCost);
-    });
-
     // Build the response
     const projectSummaries: ProjectSummaryItem[] = projects.map((project) => {
       const internalMinutes = internalMinutesMap.get(project.id) || 0;
-      const externalMinutes = externalMinutesMap.get(project.id) || 0;
       const internalCost = internalCostMap.get(project.id) || 0;
-      const externalCost = externalCostMap.get(project.id) || 0;
 
       return {
         id: project.id,
         name: project.name,
         code: project.code,
-        totalMinutes: internalMinutes + externalMinutes,
+        totalMinutes: internalMinutes,
         internalMinutes,
-        externalMinutes,
-        totalCost: this.roundToTwoDecimals(internalCost + externalCost),
+        externalMinutes: 0, // Kept for backwards compatibility
+        totalCost: this.roundToTwoDecimals(internalCost),
         internalCost: this.roundToTwoDecimals(internalCost),
-        externalCost: this.roundToTwoDecimals(externalCost),
+        externalCost: 0, // Kept for backwards compatibility
       };
     });
 
@@ -228,16 +170,13 @@ export class AnalyticsService {
    * GET /analytics/projects/:projectId/breakdown
    * Returns per-worker breakdown for a specific project
    * When teamId is provided, verifies project belongs to that team
-   * When userIds is provided, only includes workers from that list and excludes external workers
+   * When userIds is provided, only includes workers from that list
    */
   async getProjectBreakdown(
     projectId: string,
     companyId: string,
     options?: { userIds?: string[] | null; teamId?: string | null },
   ): Promise<ProjectBreakdownResponse> {
-    // Check if we're filtering by team scope (team leader case)
-    const isTeamScoped = !!options?.teamId;
-
     // Verify project exists, belongs to company, and (if team-scoped) belongs to the team
     const project = await this.prisma.project.findFirst({
       where: {
@@ -281,37 +220,6 @@ export class AnalyticsService {
 
     const usersMap = new Map(users.map((u) => [u.id, u]));
 
-    // Get external hours grouped by external worker (only for full admins)
-    const externalEntries = isTeamScoped
-      ? []
-      : await this.prisma.externalHours.groupBy({
-          by: ['externalWorkerId'],
-          where: {
-            projectId,
-            companyId,
-          },
-          _sum: {
-            minutes: true,
-          },
-        });
-
-    // Get external worker details (only for full admins)
-    const externalWorkerIds = externalEntries.map((e) => e.externalWorkerId);
-    const externalWorkers = isTeamScoped
-      ? []
-      : await this.prisma.externalWorker.findMany({
-          where: {
-            id: { in: externalWorkerIds },
-          },
-          select: {
-            id: true,
-            name: true,
-            hourlyCost: true,
-          },
-        });
-
-    const externalWorkersMap = new Map(externalWorkers.map((e) => [e.id, e]));
-
     // Build workers array
     const workers: WorkerBreakdownItem[] = [];
 
@@ -332,23 +240,6 @@ export class AnalyticsService {
       }
     });
 
-    // Add external workers (only for full admins)
-    externalEntries.forEach((entry) => {
-      const externalWorker = externalWorkersMap.get(entry.externalWorkerId);
-      if (externalWorker) {
-        const minutes = entry._sum.minutes || 0;
-        const hourlyCost = Number(externalWorker.hourlyCost);
-        workers.push({
-          id: externalWorker.id,
-          name: externalWorker.name,
-          type: 'external',
-          minutes,
-          hourlyCost,
-          totalCost: this.calculateCost(minutes, hourlyCost),
-        });
-      }
-    });
-
     // Sort by totalCost descending
     workers.sort((a, b) => b.totalCost - a.totalCost);
 
@@ -357,7 +248,7 @@ export class AnalyticsService {
 
   /**
    * GET /analytics/workers-summary
-   * Returns aggregated data for all active workers (users + externals)
+   * Returns aggregated data for all active workers (internal users only)
    */
   async getWorkersSummary(
     companyId: string,
@@ -399,43 +290,6 @@ export class AnalyticsService {
       userMinutesMap.set(entry.userId, entry._sum.durationMinutes || 0);
     });
 
-    // Get all active external workers with their hours aggregated
-    // Only include external workers if no team scope filter (full admins)
-    const activeExternalWorkers = options?.userIds
-      ? []
-      : await this.prisma.externalWorker.findMany({
-          where: {
-            companyId,
-            isActive: true,
-          },
-          select: {
-            id: true,
-            name: true,
-            hourlyCost: true,
-          },
-        });
-
-    // Get external hours grouped by external worker (only if no team scope)
-    const externalHoursEntries = options?.userIds
-      ? []
-      : await this.prisma.externalHours.groupBy({
-          by: ['externalWorkerId'],
-          where: {
-            companyId,
-            externalWorker: {
-              isActive: true,
-            },
-          },
-          _sum: {
-            minutes: true,
-          },
-        });
-
-    const externalMinutesMap = new Map<string, number>();
-    externalHoursEntries.forEach((entry) => {
-      externalMinutesMap.set(entry.externalWorkerId, entry._sum.minutes || 0);
-    });
-
     // Build workers array
     const workers: WorkerSummaryItem[] = [];
 
@@ -447,20 +301,6 @@ export class AnalyticsService {
         id: user.id,
         name: user.name,
         type: 'internal',
-        hourlyCost,
-        totalMinutes,
-        totalCost: this.calculateCost(totalMinutes, hourlyCost),
-      });
-    });
-
-    // Add external workers
-    activeExternalWorkers.forEach((externalWorker) => {
-      const totalMinutes = externalMinutesMap.get(externalWorker.id) || 0;
-      const hourlyCost = Number(externalWorker.hourlyCost);
-      workers.push({
-        id: externalWorker.id,
-        name: externalWorker.name,
-        type: 'external',
         hourlyCost,
         totalMinutes,
         totalCost: this.calculateCost(totalMinutes, hourlyCost),
@@ -482,11 +322,13 @@ export class AnalyticsService {
     workerType: 'internal' | 'external',
     companyId: string,
   ): Promise<WorkerBreakdownResponse> {
-    if (workerType === 'internal') {
-      return this.getInternalWorkerBreakdown(workerId, companyId);
-    } else {
-      return this.getExternalWorkerBreakdown(workerId, companyId);
+    // Only internal workers are now supported
+    if (workerType === 'external') {
+      throw new NotFoundException(
+        'Los trabajadores externos ya no están soportados. Usa los costes externos del flujo de caja.',
+      );
     }
+    return this.getInternalWorkerBreakdown(workerId, companyId);
   }
 
   private async getInternalWorkerBreakdown(
@@ -566,88 +408,6 @@ export class AnalyticsService {
       worker: {
         id: user.id,
         name: user.name,
-        hourlyCost,
-      },
-      projects: projectsBreakdown,
-    };
-  }
-
-  private async getExternalWorkerBreakdown(
-    externalWorkerId: string,
-    companyId: string,
-  ): Promise<WorkerBreakdownResponse> {
-    // Verify external worker exists and belongs to company
-    const externalWorker = await this.prisma.externalWorker.findFirst({
-      where: {
-        id: externalWorkerId,
-        companyId,
-      },
-      select: {
-        id: true,
-        name: true,
-        hourlyCost: true,
-      },
-    });
-
-    if (!externalWorker) {
-      throw new NotFoundException(
-        `Externo con ID ${externalWorkerId} no encontrado`,
-      );
-    }
-
-    // Get external hours grouped by project
-    const externalHours = await this.prisma.externalHours.groupBy({
-      by: ['projectId'],
-      where: {
-        externalWorkerId,
-        companyId,
-      },
-      _sum: {
-        minutes: true,
-      },
-    });
-
-    // Get project details
-    const projectIds = externalHours.map((e) => e.projectId);
-    const projects = await this.prisma.project.findMany({
-      where: {
-        id: { in: projectIds },
-      },
-      select: {
-        id: true,
-        name: true,
-        code: true,
-      },
-    });
-
-    const projectsMap = new Map(projects.map((p) => [p.id, p]));
-    const hourlyCost = Number(externalWorker.hourlyCost);
-
-    // Build projects array
-    const projectsBreakdown = externalHours
-      .map((entry) => {
-        const project = projectsMap.get(entry.projectId);
-        if (!project) return null;
-
-        const minutes = entry._sum.minutes || 0;
-        return {
-          id: project.id,
-          name: project.name,
-          code: project.code,
-          minutes,
-          cost: this.calculateCost(minutes, hourlyCost),
-        };
-      })
-      .filter((p): p is NonNullable<typeof p> => p !== null);
-
-    // Sort by minutes descending
-    projectsBreakdown.sort((a, b) => b.minutes - a.minutes);
-
-    return {
-      workerType: 'external',
-      worker: {
-        id: externalWorker.id,
-        name: externalWorker.name,
         hourlyCost,
       },
       projects: projectsBreakdown,

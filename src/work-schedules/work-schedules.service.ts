@@ -5,6 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { HourlyCostService } from '../hourly-cost/hourly-cost.service.js';
 import type { UpdateWorkScheduleDto } from './dto/update-work-schedule.dto.js';
 import type {
   WorkScheduleResponse,
@@ -14,7 +15,10 @@ import type { WorkSchedule } from '@prisma/client';
 
 @Injectable()
 export class WorkSchedulesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly hourlyCostService: HourlyCostService,
+  ) {}
 
   /**
    * Convert time string (HH:mm) to minutes
@@ -236,6 +240,9 @@ export class WorkSchedulesService {
       }
     });
 
+    // Recalculate hourly costs for users using company default schedule
+    await this.hourlyCostService.recalculateHourlyCostsForCompany(companyId);
+
     return this.getCompanyDefault(companyId);
   }
 
@@ -328,6 +335,12 @@ export class WorkSchedulesService {
       }
     });
 
+    // Recalculate hourly cost for this user
+    await this.hourlyCostService.recalculateHourlyCostForUser(
+      companyId,
+      userId,
+    );
+
     return this.getEffectiveSchedule(companyId, userId);
   }
 
@@ -364,6 +377,12 @@ export class WorkSchedulesService {
         userId,
       },
     });
+
+    // Recalculate hourly cost for this user (now using company defaults)
+    await this.hourlyCostService.recalculateHourlyCostForUser(
+      companyId,
+      userId,
+    );
   }
 
   /**
@@ -448,6 +467,12 @@ export class WorkSchedulesService {
       }
     });
 
+    // Recalculate hourly cost for this user
+    await this.hourlyCostService.recalculateHourlyCostForUser(
+      companyId,
+      targetUserId,
+    );
+
     return this.getEffectiveSchedule(companyId, targetUserId);
   }
 
@@ -477,5 +502,11 @@ export class WorkSchedulesService {
         userId: targetUserId,
       },
     });
+
+    // Recalculate hourly cost for this user (now using company defaults)
+    await this.hourlyCostService.recalculateHourlyCostForUser(
+      companyId,
+      targetUserId,
+    );
   }
 }

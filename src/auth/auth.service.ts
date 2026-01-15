@@ -26,6 +26,7 @@ export interface AuthUser {
   isActive: boolean;
   createdAt: Date;
   hasProjectsFeature: boolean;
+  hasCashFlowFeature: boolean;
 }
 
 export interface ProfileInfo {
@@ -35,6 +36,8 @@ export interface ProfileInfo {
   role: UserRole;
   relation: RelationType;
   teamId: string | null;
+  hasProjectsFeature: boolean;
+  hasCashFlowFeature: boolean;
   company: {
     id: string;
     name: string;
@@ -191,6 +194,8 @@ export class AuthService {
             id: true,
             name: true,
             logoUrl: true,
+            hasProjectsFeature: true,
+            hasCashFlowFeature: true,
           },
         },
       },
@@ -204,6 +209,8 @@ export class AuthService {
       role: user.role,
       relation: user.relation,
       teamId: user.teamId,
+      hasProjectsFeature: user.company.hasProjectsFeature,
+      hasCashFlowFeature: user.company.hasCashFlowFeature,
       company: {
         id: user.company.id,
         name: user.company.name,
@@ -417,6 +424,8 @@ export class AuthService {
       role: result.role,
       relation: result.relation,
       teamId: result.teamId,
+      hasProjectsFeature: invitation.company.hasProjectsFeature,
+      hasCashFlowFeature: invitation.company.hasCashFlowFeature,
       company: {
         id: invitation.company.id,
         name: invitation.company.name,
@@ -513,7 +522,11 @@ export class AuthService {
     relation: RelationType;
     isActive: boolean;
     createdAt: Date;
-    company?: { name: string; hasProjectsFeature?: boolean } | null;
+    company?: {
+      name: string;
+      hasProjectsFeature?: boolean;
+      hasCashFlowFeature?: boolean;
+    } | null;
   }): AuthUser {
     return {
       id: user.id,
@@ -528,6 +541,7 @@ export class AuthService {
       isActive: user.isActive,
       createdAt: user.createdAt,
       hasProjectsFeature: user.company?.hasProjectsFeature ?? false,
+      hasCashFlowFeature: user.company?.hasCashFlowFeature ?? false,
     };
   }
 }

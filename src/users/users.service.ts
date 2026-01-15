@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SupabaseService } from '../supabase/supabase.service.js';
+import { HourlyCostService } from '../hourly-cost/hourly-cost.service.js';
 import { UpdateUserDto } from './dto/update-user.dto.js';
 import type { User, UserRole } from '@prisma/client';
 
@@ -24,6 +25,7 @@ export interface UserResponse {
   email: string;
   phone: string | null;
   avatarUrl: string | null;
+  salary: number | null;
   hourlyCost: number;
   isActive: boolean;
   role: UserRole;
@@ -46,6 +48,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly supabaseService: SupabaseService,
+    private readonly hourlyCostService: HourlyCostService,
   ) {}
 
   async findAll(
@@ -181,13 +184,53 @@ export class UsersService {
         });
       }
 
+      // Calculate hourly cost if salary is being updated
+      let calculatedHourlyCost: number | undefined;
+      const salaryChanged =
+        updateUserDto.salary !== undefined &&
+        updateUserDto.salary !== Number(existing.salary);
+
+      if (
+        salaryChanged &&
+        updateUserDto.salary !== null &&
+        updateUserDto.salary !== undefined
+      ) {
+        // Auto-calculate hourly cost from salary
+        calculatedHourlyCost =
+          await this.hourlyCostService.calculateHourlyCostFromSalary(
+            companyId,
+            id,
+            updateUserDto.salary,
+          );
+      }
+
+      // Determine final hourly cost:
+      // 1. If salary changed to a non-null value, use calculated value
+      // 2. If salary changed to null, reset hourly cost to 0
+      // 3. If hourlyCost explicitly provided and salary NOT changed, use that (manual override)
+      // 4. Otherwise, keep existing
+      let finalHourlyCost: number | undefined;
+
+      if (salaryChanged && calculatedHourlyCost !== undefined) {
+        // Salary changed to a non-null value - always use calculated value
+        finalHourlyCost = calculatedHourlyCost;
+      } else if (salaryChanged && updateUserDto.salary === null) {
+        // Salary removed - reset hourly cost to 0
+        finalHourlyCost = 0;
+      } else if (!salaryChanged && updateUserDto.hourlyCost !== undefined) {
+        // Manual override when salary didn't change
+        finalHourlyCost = updateUserDto.hourlyCost;
+      }
+      // Otherwise undefined - Prisma won't update the field
+
       const user = await this.prisma.user.update({
         where: { id },
         data: {
           name: updateUserDto.name,
           email: updateUserDto.email,
           phone: updateUserDto.phone,
-          hourlyCost: updateUserDto.hourlyCost,
+          salary: updateUserDto.salary,
+          hourlyCost: finalHourlyCost,
           isActive: updateUserDto.isActive,
           role: updateUserDto.role,
           relation: updateUserDto.relation,
@@ -308,6 +351,7 @@ export class UsersService {
       email: user.email,
       phone: user.phone,
       avatarUrl: user.avatarUrl,
+      salary: user.salary ? Number(user.salary) : null,
       hourlyCost: Number(user.hourlyCost),
       isActive: user.isActive,
       role: user.role,

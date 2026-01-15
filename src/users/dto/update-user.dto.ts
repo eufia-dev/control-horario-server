@@ -40,6 +40,11 @@ export class UpdateUserDto {
   @IsNumber()
   @Min(0)
   @IsOptional()
+  salary?: number | null;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
   hourlyCost?: number;
 
   @IsBoolean()
