@@ -27,6 +27,7 @@ model Company {
   users             User[]
   projects          Project[]
   projectCategories ProjectCategory[]
+  providers         Provider[]
   timeEntries       TimeEntry[]
   workSchedules     WorkSchedule[]
   activeTimers      ActiveTimer[]
@@ -197,15 +198,30 @@ model Project {
 }
 
 model ProjectCategory {
-  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  companyId String  @map("company_id") @db.Uuid
-  name      String  @db.VarChar(100)
-  color     String?
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String @map("company_id") @db.Uuid
+  name      String @db.VarChar(100)
 
   company  Company   @relation(fields: [companyId], references: [id])
   projects Project[]
 
   @@map("project_categories")
+}
+
+model Provider {
+  id            String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId     String @map("company_id") @db.Uuid
+  name          String @db.VarChar(255)
+  paymentPeriod Int    @map("payment_period") // Payment period in days (e.g., 30, 60, 90)
+
+  company               Company                       @relation(fields: [companyId], references: [id])
+  externalCostEstimates ProjectExternalCostEstimate[]
+  externalCostActuals   ProjectExternalCostActual[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([companyId, name])
+  @@map("providers")
 }
 
 // ---------------------------------------------------------
@@ -232,18 +248,19 @@ model ProjectMonthlyRevenue {
 }
 
 model ProjectExternalCostEstimate {
-  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  projectId String @map("project_id") @db.Uuid
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId  String  @map("project_id") @db.Uuid
+  providerId String? @map("provider_id") @db.Uuid
 
   year  Int
   month Int // 1-12
 
-  amount      Decimal                      @db.Decimal(12, 2)
-  provider    String?                      @db.VarChar(255)
-  expenseType ExternalCostExpenseType?     @map("expense_type")
-  description String?                      @db.VarChar(500)
+  amount      Decimal                  @db.Decimal(12, 2)
+  expenseType ExternalCostExpenseType? @map("expense_type")
+  description String?                  @db.VarChar(500)
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  provider Provider? @relation(fields: [providerId], references: [id])
 
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime? @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -252,23 +269,22 @@ model ProjectExternalCostEstimate {
 }
 
 model ProjectExternalCostActual {
-  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  projectId String @map("project_id") @db.Uuid
+  id         String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId  String @map("project_id") @db.Uuid
+  providerId String @map("provider_id") @db.Uuid
 
   year  Int
   month Int // 1-12
 
-  amount        Decimal                 @db.Decimal(12, 2)
-  provider      String                  @db.VarChar(255)
-  expenseType   ExternalCostExpenseType @map("expense_type")
-  description   String?                 @db.VarChar(500)
-  paymentPeriod String?                 @map("payment_period") @db.VarChar(100)
+  amount      Decimal                 @db.Decimal(12, 2)
+  expenseType ExternalCostExpenseType @map("expense_type")
+  description String?                 @db.VarChar(500)
 
   isBilled  Boolean   @default(false) @map("is_billed")
   issueDate DateTime? @map("issue_date") @db.Date
-  dueDate   DateTime? @map("due_date") @db.Date
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project  Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  provider Provider @relation(fields: [providerId], references: [id])
 
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime? @updatedAt @map("updated_at") @db.Timestamptz(6)

@@ -32,13 +32,19 @@ export interface MonthlyRevenueResponse {
   updatedAt: Date | null;
 }
 
+export interface ProviderInfo {
+  id: string;
+  name: string;
+  paymentPeriod: number; // Payment period in days
+}
+
 export interface CostEstimateResponse {
   id: string;
   projectId: string;
   year: number;
   month: number;
   amount: number;
-  provider: string | null;
+  provider: ProviderInfo | null;
   expenseType: ExternalCostExpenseType | null;
   description: string | null;
   createdAt: Date;
@@ -51,13 +57,11 @@ export interface CostActualResponse {
   year: number;
   month: number;
   amount: number;
-  provider: string;
+  provider: ProviderInfo;
   expenseType: ExternalCostExpenseType;
   description: string | null;
-  paymentPeriod: string | null;
   isBilled: boolean;
   issueDate: Date | null;
-  dueDate: Date | null;
   createdAt: Date;
   updatedAt: Date | null;
 }
@@ -226,6 +230,9 @@ export class CashFlowService {
         ...(year && { year }),
         ...(month && { month }),
       },
+      include: {
+        provider: true,
+      },
       orderBy: [{ year: 'desc' }, { month: 'desc' }, { createdAt: 'desc' }],
     });
 
@@ -246,9 +253,12 @@ export class CashFlowService {
         year: dto.year,
         month: dto.month,
         amount: dto.amount,
-        provider: dto.provider,
+        providerId: dto.providerId,
         expenseType: dto.expenseType,
         description: dto.description,
+      },
+      include: {
+        provider: true,
       },
     });
 
@@ -280,9 +290,12 @@ export class CashFlowService {
         year: dto.year,
         month: dto.month,
         amount: dto.amount,
-        provider: dto.provider,
+        providerId: dto.providerId,
         expenseType: dto.expenseType,
         description: dto.description,
+      },
+      include: {
+        provider: true,
       },
     });
 
@@ -329,6 +342,9 @@ export class CashFlowService {
         ...(year && { year }),
         ...(month && { month }),
       },
+      include: {
+        provider: true,
+      },
       orderBy: [{ year: 'desc' }, { month: 'desc' }, { createdAt: 'desc' }],
     });
 
@@ -349,13 +365,14 @@ export class CashFlowService {
         year: dto.year,
         month: dto.month,
         amount: dto.amount,
-        provider: dto.provider,
+        providerId: dto.providerId,
         expenseType: dto.expenseType,
         description: dto.description,
-        paymentPeriod: dto.paymentPeriod,
         isBilled: dto.isBilled ?? false,
         issueDate: dto.issueDate ? new Date(dto.issueDate) : null,
-        dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
+      },
+      include: {
+        provider: true,
       },
     });
 
@@ -385,10 +402,9 @@ export class CashFlowService {
         year: dto.year,
         month: dto.month,
         amount: dto.amount,
-        provider: dto.provider,
+        providerId: dto.providerId,
         expenseType: dto.expenseType,
         description: dto.description,
-        paymentPeriod: dto.paymentPeriod,
         isBilled: dto.isBilled,
         issueDate:
           dto.issueDate !== undefined
@@ -396,12 +412,9 @@ export class CashFlowService {
               ? new Date(dto.issueDate)
               : null
             : undefined,
-        dueDate:
-          dto.dueDate !== undefined
-            ? dto.dueDate
-              ? new Date(dto.dueDate)
-              : null
-            : undefined,
+      },
+      include: {
+        provider: true,
       },
     });
 
@@ -448,9 +461,11 @@ export class CashFlowService {
         }),
         this.prisma.projectExternalCostEstimate.findMany({
           where: { projectId, year, month },
+          include: { provider: true },
         }),
         this.prisma.projectExternalCostActual.findMany({
           where: { projectId, year, month },
+          include: { provider: true },
         }),
         this.calculateInternalCosts(projectId, companyId, year, month),
       ]);
@@ -711,7 +726,9 @@ export class CashFlowService {
   }
 
   private toCostEstimateResponse(
-    estimate: ProjectExternalCostEstimate,
+    estimate: ProjectExternalCostEstimate & {
+      provider: { id: string; name: string; paymentPeriod: number } | null;
+    },
   ): CostEstimateResponse {
     return {
       id: estimate.id,
@@ -719,7 +736,13 @@ export class CashFlowService {
       year: estimate.year,
       month: estimate.month,
       amount: Number(estimate.amount),
-      provider: estimate.provider,
+      provider: estimate.provider
+        ? {
+            id: estimate.provider.id,
+            name: estimate.provider.name,
+            paymentPeriod: estimate.provider.paymentPeriod,
+          }
+        : null,
       expenseType: estimate.expenseType,
       description: estimate.description,
       createdAt: estimate.createdAt,
@@ -728,7 +751,9 @@ export class CashFlowService {
   }
 
   private toCostActualResponse(
-    actual: ProjectExternalCostActual,
+    actual: ProjectExternalCostActual & {
+      provider: { id: string; name: string; paymentPeriod: number };
+    },
   ): CostActualResponse {
     return {
       id: actual.id,
@@ -736,13 +761,15 @@ export class CashFlowService {
       year: actual.year,
       month: actual.month,
       amount: Number(actual.amount),
-      provider: actual.provider,
+      provider: {
+        id: actual.provider.id,
+        name: actual.provider.name,
+        paymentPeriod: actual.provider.paymentPeriod,
+      },
       expenseType: actual.expenseType,
       description: actual.description,
-      paymentPeriod: actual.paymentPeriod,
       isBilled: actual.isBilled,
       issueDate: actual.issueDate,
-      dueDate: actual.dueDate,
       createdAt: actual.createdAt,
       updatedAt: actual.updatedAt,
     };

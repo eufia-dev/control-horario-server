@@ -22,6 +22,7 @@ import { WorkSchedulesModule } from './work-schedules/work-schedules.module.js';
 import { RemindersModule } from './reminders/reminders.module.js';
 import { TeamsModule } from './teams/teams.module.js';
 import { CashFlowModule } from './cash-flow/cash-flow.module.js';
+import { ProvidersModule } from './providers/providers.module.js';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { CashFlowModule } from './cash-flow/cash-flow.module.js';
     RemindersModule,
     TeamsModule,
     CashFlowModule,
+    ProvidersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -5,6 +5,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -34,10 +35,9 @@ export class CreateCostEstimateDto {
   @Min(0)
   amount!: number;
 
-  @IsString()
+  @IsUUID()
   @IsOptional()
-  @MaxLength(255)
-  provider?: string;
+  providerId?: string;
 
   @IsEnum(ExternalCostExpenseType)
   @IsOptional()

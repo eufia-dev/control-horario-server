@@ -7,6 +7,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -29,10 +30,9 @@ export class CreateCostActualDto {
   @Min(0)
   amount!: number;
 
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
-  @MaxLength(255)
-  provider!: string;
+  providerId!: string;
 
   @IsEnum(ExternalCostExpenseType)
   @IsNotEmpty()
@@ -43,11 +43,6 @@ export class CreateCostActualDto {
   @MaxLength(500)
   description?: string;
 
-  @IsString()
-  @IsOptional()
-  @MaxLength(100)
-  paymentPeriod?: string;
-
   @IsBoolean()
   @IsOptional()
   isBilled?: boolean;
@@ -55,8 +50,4 @@ export class CreateCostActualDto {
   @IsDateString()
   @IsOptional()
   issueDate?: string;
-
-  @IsDateString()
-  @IsOptional()
-  dueDate?: string;
 }

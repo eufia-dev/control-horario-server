@@ -7,6 +7,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -31,11 +32,10 @@ export class UpdateCostActualDto {
   @IsOptional()
   amount?: number;
 
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   @IsOptional()
-  @MaxLength(255)
-  provider?: string;
+  providerId?: string;
 
   @IsEnum(ExternalCostExpenseType)
   @IsOptional()
@@ -46,11 +46,6 @@ export class UpdateCostActualDto {
   @MaxLength(500)
   description?: string | null;
 
-  @IsString()
-  @IsOptional()
-  @MaxLength(100)
-  paymentPeriod?: string | null;
-
   @IsBoolean()
   @IsOptional()
   isBilled?: boolean;
@@ -58,8 +53,4 @@ export class UpdateCostActualDto {
   @IsDateString()
   @IsOptional()
   issueDate?: string | null;
-
-  @IsDateString()
-  @IsOptional()
-  dueDate?: string | null;
 }

@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -7,7 +8,9 @@ import {
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateProjectDto } from './dto/create-project.dto.js';
 import { UpdateProjectDto } from './dto/update-project.dto.js';
-import type { Project } from '@prisma/client';
+import { CreateProjectCategoryDto } from './dto/create-project-category.dto.js';
+import { UpdateProjectCategoryDto } from './dto/update-project-category.dto.js';
+import type { Project, ProjectCategory } from '@prisma/client';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
 
 export interface ProjectTeamInfo {
@@ -35,6 +38,11 @@ export interface DeletedProjectResponse {
   code: string | null;
   isActive: boolean;
   createdAt: Date;
+}
+
+export interface ProjectCategoryResponse {
+  id: string;
+  name: string;
 }
 
 @Injectable()
@@ -226,6 +234,143 @@ export class ProjectsService {
       code: project.code,
       isActive: project.isActive,
       createdAt: project.createdAt,
+    };
+  }
+
+  // ---------------------------------------------------------
+  // PROJECT CATEGORIES
+  // ---------------------------------------------------------
+
+  async findAllCategories(
+    companyId: string,
+  ): Promise<ProjectCategoryResponse[]> {
+    const categories = await this.prisma.projectCategory.findMany({
+      where: { companyId },
+      orderBy: { name: 'asc' },
+    });
+
+    return categories.map((c) => this.toProjectCategoryResponse(c));
+  }
+
+  async findOneCategory(
+    id: string,
+    companyId: string,
+  ): Promise<ProjectCategoryResponse> {
+    const category = await this.prisma.projectCategory.findFirst({
+      where: { id, companyId },
+    });
+
+    if (!category) {
+      throw new NotFoundException(`Categoría con ID ${id} no encontrada`);
+    }
+
+    return this.toProjectCategoryResponse(category);
+  }
+
+  async createCategory(
+    dto: CreateProjectCategoryDto,
+    companyId: string,
+  ): Promise<ProjectCategoryResponse> {
+    // Check if category name already exists in this company
+    const existing = await this.prisma.projectCategory.findFirst({
+      where: {
+        companyId,
+        name: dto.name,
+      },
+    });
+
+    if (existing) {
+      throw new ConflictException(
+        `Ya existe una categoría con el nombre "${dto.name}"`,
+      );
+    }
+
+    const category = await this.prisma.projectCategory.create({
+      data: {
+        name: dto.name,
+        companyId,
+      },
+    });
+
+    return this.toProjectCategoryResponse(category);
+  }
+
+  async updateCategory(
+    id: string,
+    dto: UpdateProjectCategoryDto,
+    companyId: string,
+  ): Promise<ProjectCategoryResponse> {
+    const existing = await this.prisma.projectCategory.findFirst({
+      where: { id, companyId },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`Categoría con ID ${id} no encontrada`);
+    }
+
+    // Check if new name conflicts with another category
+    if (dto.name && dto.name !== existing.name) {
+      const conflict = await this.prisma.projectCategory.findFirst({
+        where: {
+          companyId,
+          name: dto.name,
+          id: { not: id },
+        },
+      });
+
+      if (conflict) {
+        throw new ConflictException(
+          `Ya existe una categoría con el nombre "${dto.name}"`,
+        );
+      }
+    }
+
+    const category = await this.prisma.projectCategory.update({
+      where: { id },
+      data: {
+        name: dto.name,
+      },
+    });
+
+    return this.toProjectCategoryResponse(category);
+  }
+
+  async removeCategory(
+    id: string,
+    companyId: string,
+  ): Promise<{ success: boolean }> {
+    const existing = await this.prisma.projectCategory.findFirst({
+      where: { id, companyId },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`Categoría con ID ${id} no encontrada`);
+    }
+
+    // Check if category is in use by any projects
+    const projectsCount = await this.prisma.project.count({
+      where: { categoryId: id },
+    });
+
+    if (projectsCount > 0) {
+      throw new ConflictException(
+        `No se puede eliminar la categoría porque está siendo utilizada en ${projectsCount} proyecto(s)`,
+      );
+    }
+
+    await this.prisma.projectCategory.delete({
+      where: { id },
+    });
+
+    return { success: true };
+  }
+
+  private toProjectCategoryResponse(
+    category: ProjectCategory,
+  ): ProjectCategoryResponse {
+    return {
+      id: category.id,
+      name: category.name,
     };
   }
 }

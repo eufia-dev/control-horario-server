@@ -4,6 +4,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -28,10 +29,9 @@ export class UpdateCostEstimateDto {
   @IsOptional()
   amount?: number;
 
-  @IsString()
+  @IsUUID()
   @IsOptional()
-  @MaxLength(255)
-  provider?: string | null;
+  providerId?: string | null;
 
   @IsEnum(ExternalCostExpenseType)
   @IsOptional()

@@ -11,14 +11,18 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { AdminGuard } from '../auth/admin.guard.js';
 import { TeamLeaderGuard } from '../auth/team-leader.guard.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { ProjectsFeatureGuard } from '../auth/projects-feature.guard.js';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
 import { CreateProjectDto } from './dto/create-project.dto.js';
 import { UpdateProjectDto } from './dto/update-project.dto.js';
+import { CreateProjectCategoryDto } from './dto/create-project-category.dto.js';
+import { UpdateProjectCategoryDto } from './dto/update-project-category.dto.js';
 import {
   DeletedProjectResponse,
+  ProjectCategoryResponse,
   ProjectResponse,
   ProjectsService,
 } from './projects.service.js';
@@ -78,5 +82,52 @@ export class ProjectsController {
     @Req() req: RequestWithUser,
   ): Promise<DeletedProjectResponse> {
     return this.projectsService.remove(id, req.user.companyId, req.user);
+  }
+
+  // ---------------------------------------------------------
+  // PROJECT CATEGORIES
+  // ---------------------------------------------------------
+
+  @Get('categories/all')
+  findAllCategories(
+    @Req() req: RequestWithUser,
+  ): Promise<ProjectCategoryResponse[]> {
+    return this.projectsService.findAllCategories(req.user.companyId);
+  }
+
+  @Get('categories/:id')
+  findOneCategory(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: RequestWithUser,
+  ): Promise<ProjectCategoryResponse> {
+    return this.projectsService.findOneCategory(id, req.user.companyId);
+  }
+
+  @Post('categories')
+  @UseGuards(AdminGuard)
+  createCategory(
+    @Body() dto: CreateProjectCategoryDto,
+    @Req() req: RequestWithUser,
+  ): Promise<ProjectCategoryResponse> {
+    return this.projectsService.createCategory(dto, req.user.companyId);
+  }
+
+  @Patch('categories/:id')
+  @UseGuards(AdminGuard)
+  updateCategory(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateProjectCategoryDto,
+    @Req() req: RequestWithUser,
+  ): Promise<ProjectCategoryResponse> {
+    return this.projectsService.updateCategory(id, dto, req.user.companyId);
+  }
+
+  @Delete('categories/:id')
+  @UseGuards(AdminGuard)
+  removeCategory(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: RequestWithUser,
+  ): Promise<{ success: boolean }> {
+    return this.projectsService.removeCategory(id, req.user.companyId);
   }
 }
