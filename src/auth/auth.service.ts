@@ -82,6 +82,14 @@ export class OnboardingRequiredError extends UnauthorizedException {
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+
+  // In-memory cache for profile preferences with 10-minute TTL
+  private profilePreferenceCache = new Map<
+    string,
+    { profileId: string; expiresAt: number }
+  >();
+  private readonly CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly supabase: SupabaseService,
@@ -126,20 +134,30 @@ export class AuthService {
   ): Promise<AuthUser> {
     const supabaseUser = await this.validateSupabaseToken(accessToken);
 
+    // If no profileId provided, try to get the stored preference from cache
+    let effectiveProfileId = profileId;
+    if (!effectiveProfileId) {
+      effectiveProfileId =
+        (await this.getStoredProfilePreferenceWithCache(supabaseUser.id)) ??
+        undefined;
+    }
+
     // Build where clause - if profileId is provided, validate it belongs to this authId
-    const whereClause = profileId
-      ? { id: profileId, authId: supabaseUser.id }
+    const whereClause = effectiveProfileId
+      ? { id: effectiveProfileId, authId: supabaseUser.id }
       : { authId: supabaseUser.id };
 
     // Fetch app user by authId (Supabase UID) and optionally profileId
+    // Use orderBy for deterministic fallback when no profile is specified
     const appUser = await this.prisma.user.findFirst({
       where: whereClause,
       include: { company: true },
+      orderBy: { createdAt: 'asc' },
     });
 
     if (!appUser) {
       // If profileId was provided but not found, it's an invalid profile
-      if (profileId) {
+      if (effectiveProfileId) {
         throw new UnauthorizedException(
           'Perfil no válido o no pertenece a este usuario',
         );
@@ -156,6 +174,7 @@ export class AuthService {
 
   /**
    * Save the user's current profile preference to Supabase user metadata
+   * Also updates the in-memory cache immediately
    */
   async saveProfilePreference(
     authId: string,
@@ -163,6 +182,12 @@ export class AuthService {
   ): Promise<void> {
     await this.supabase.updateUser(authId, {
       user_metadata: { currentProfileId: profileId },
+    });
+
+    // Update cache immediately instead of invalidating
+    this.profilePreferenceCache.set(authId, {
+      profileId,
+      expiresAt: Date.now() + this.CACHE_TTL_MS,
     });
   }
 
@@ -175,6 +200,38 @@ export class AuthService {
       return null;
     }
     return metadata.currentProfileId;
+  }
+
+  /**
+   * Get the user's stored profile preference with caching.
+   * Checks in-memory cache first, falls back to Supabase if not cached or expired.
+   */
+  async getStoredProfilePreferenceWithCache(
+    authId: string,
+  ): Promise<string | null> {
+    // Check cache first
+    const cached = this.profilePreferenceCache.get(authId);
+    if (cached) {
+      if (cached.expiresAt > Date.now()) {
+        return cached.profileId;
+      }
+      this.profilePreferenceCache.delete(authId);
+    }
+
+    // Fetch from Supabase
+    const profileId = await this.getStoredProfilePreference(authId);
+
+    // Cache the result if found
+    if (profileId) {
+      this.profilePreferenceCache.set(authId, {
+        profileId,
+        expiresAt: Date.now() + this.CACHE_TTL_MS,
+      });
+    } else {
+      this.profilePreferenceCache.delete(authId);
+    }
+
+    return profileId;
   }
 
   /**
