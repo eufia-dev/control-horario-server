@@ -27,6 +27,7 @@ import type {
   PublicHoliday,
   CompanyHoliday,
   TimeEntry,
+  UserAbsence,
 } from '@prisma/client';
 
 @Injectable()
@@ -51,6 +52,13 @@ export class AnalyticsService {
    */
   private calculateCost(minutes: number, hourlyCost: number): number {
     return this.roundToTwoDecimals((minutes / 60) * hourlyCost);
+  }
+
+  /**
+   * Convert a Date to a YYYY-MM-DD string key
+   */
+  private toDateKey(date: Date): string {
+    return date.toISOString().split('T')[0];
   }
 
   /**
@@ -81,24 +89,7 @@ export class AnalyticsService {
     // Get project IDs for filtering time entries
     const projectIds = projects.map((p) => p.id);
 
-    // Get internal time entries aggregated by project
-    const internalTimeEntries = await this.prisma.timeEntry.groupBy({
-      by: ['projectId'],
-      where: {
-        companyId,
-        projectId: { in: projectIds },
-        project: {
-          isActive: true,
-        },
-        // Filter by userIds if provided (for team scope)
-        ...(options?.userIds && { userId: { in: options.userIds } }),
-      },
-      _sum: {
-        durationMinutes: true,
-      },
-    });
-
-    // Get all time entries with user hourly costs for cost calculation
+    // Get all time entries with user hourly costs (single query for both minutes and cost)
     const timeEntriesWithCosts = await this.prisma.timeEntry.findMany({
       where: {
         companyId,
@@ -120,43 +111,31 @@ export class AnalyticsService {
       },
     });
 
-    // Create lookup maps
-    const internalMinutesMap = new Map<string, number>();
-    internalTimeEntries.forEach((entry) => {
-      if (entry.projectId) {
-        internalMinutesMap.set(
-          entry.projectId,
-          entry._sum.durationMinutes || 0,
-        );
-      }
-    });
-
-    // Calculate internal costs per project
-    const internalCostMap = new Map<string, number>();
+    // Build minutes and cost maps in a single pass
+    const projectStats = new Map<string, { minutes: number; cost: number }>();
     timeEntriesWithCosts.forEach((entry) => {
       if (entry.projectId) {
-        const currentCost = internalCostMap.get(entry.projectId) || 0;
-        const entryCost =
+        const current = projectStats.get(entry.projectId) || {
+          minutes: 0,
+          cost: 0,
+        };
+        current.minutes += entry.durationMinutes;
+        current.cost +=
           (entry.durationMinutes / 60) * Number(entry.user.hourlyCost);
-        internalCostMap.set(entry.projectId, currentCost + entryCost);
+        projectStats.set(entry.projectId, current);
       }
     });
 
     // Build the response
     const projectSummaries: ProjectSummaryItem[] = projects.map((project) => {
-      const internalMinutes = internalMinutesMap.get(project.id) || 0;
-      const internalCost = internalCostMap.get(project.id) || 0;
+      const stats = projectStats.get(project.id) || { minutes: 0, cost: 0 };
 
       return {
         id: project.id,
         name: project.name,
         code: project.code,
-        totalMinutes: internalMinutes,
-        internalMinutes,
-        externalMinutes: 0, // Kept for backwards compatibility
-        totalCost: this.roundToTwoDecimals(internalCost),
-        internalCost: this.roundToTwoDecimals(internalCost),
-        externalCost: 0, // Kept for backwards compatibility
+        totalMinutes: stats.minutes,
+        totalCost: this.roundToTwoDecimals(stats.cost),
       };
     });
 
@@ -223,7 +202,7 @@ export class AnalyticsService {
     // Build workers array
     const workers: WorkerBreakdownItem[] = [];
 
-    // Add internal workers
+    // Add workers
     internalEntries.forEach((entry) => {
       const user = usersMap.get(entry.userId);
       if (user) {
@@ -232,7 +211,6 @@ export class AnalyticsService {
         workers.push({
           id: user.id,
           name: user.name,
-          type: 'internal',
           minutes,
           hourlyCost,
           totalCost: this.calculateCost(minutes, hourlyCost),
@@ -254,36 +232,38 @@ export class AnalyticsService {
     companyId: string,
     options?: { userIds?: string[] | null },
   ): Promise<WorkersSummaryResponse> {
-    // Get all active internal users with their time entries aggregated
-    const activeUsers = await this.prisma.user.findMany({
-      where: {
-        companyId,
-        isActive: true,
-        // Filter by userIds if provided (for team scope)
-        ...(options?.userIds && { id: { in: options.userIds } }),
-      },
-      select: {
-        id: true,
-        name: true,
-        hourlyCost: true,
-      },
-    });
-
-    // Get time entries grouped by user
-    const userTimeEntries = await this.prisma.timeEntry.groupBy({
-      by: ['userId'],
-      where: {
-        companyId,
-        user: {
+    // Run both queries in parallel for better latency
+    const [activeUsers, userTimeEntries] = await Promise.all([
+      // Get all active internal users
+      this.prisma.user.findMany({
+        where: {
+          companyId,
           isActive: true,
           // Filter by userIds if provided (for team scope)
           ...(options?.userIds && { id: { in: options.userIds } }),
         },
-      },
-      _sum: {
-        durationMinutes: true,
-      },
-    });
+        select: {
+          id: true,
+          name: true,
+          hourlyCost: true,
+        },
+      }),
+      // Get time entries grouped by user
+      this.prisma.timeEntry.groupBy({
+        by: ['userId'],
+        where: {
+          companyId,
+          user: {
+            isActive: true,
+            // Filter by userIds if provided (for team scope)
+            ...(options?.userIds && { id: { in: options.userIds } }),
+          },
+        },
+        _sum: {
+          durationMinutes: true,
+        },
+      }),
+    ]);
 
     const userMinutesMap = new Map<string, number>();
     userTimeEntries.forEach((entry) => {
@@ -293,14 +273,13 @@ export class AnalyticsService {
     // Build workers array
     const workers: WorkerSummaryItem[] = [];
 
-    // Add internal users
+    // Add users
     activeUsers.forEach((user) => {
       const totalMinutes = userMinutesMap.get(user.id) || 0;
       const hourlyCost = Number(user.hourlyCost);
       workers.push({
         id: user.id,
         name: user.name,
-        type: 'internal',
         hourlyCost,
         totalMinutes,
         totalCost: this.calculateCost(totalMinutes, hourlyCost),
@@ -318,20 +297,6 @@ export class AnalyticsService {
    * Returns per-project breakdown for a specific worker
    */
   async getWorkerBreakdown(
-    workerId: string,
-    workerType: 'internal' | 'external',
-    companyId: string,
-  ): Promise<WorkerBreakdownResponse> {
-    // Only internal workers are now supported
-    if (workerType === 'external') {
-      throw new NotFoundException(
-        'Los trabajadores externos ya no están soportados. Usa los costes externos del flujo de caja.',
-      );
-    }
-    return this.getInternalWorkerBreakdown(workerId, companyId);
-  }
-
-  private async getInternalWorkerBreakdown(
     userId: string,
     companyId: string,
   ): Promise<WorkerBreakdownResponse> {
@@ -404,7 +369,6 @@ export class AnalyticsService {
     projectsBreakdown.sort((a, b) => b.minutes - a.minutes);
 
     return {
-      workerType: 'internal',
       worker: {
         id: user.id,
         name: user.name,
@@ -418,6 +382,8 @@ export class AnalyticsService {
    * GET /analytics/payroll-summary
    * Returns payroll summary for all users in the given date range
    * Includes expected vs logged hours, absence breakdowns, and cost calculations
+   *
+   * Optimized to batch all database queries upfront (5 queries total regardless of user count)
    */
   async getPayrollSummary(
     companyId: string,
@@ -428,36 +394,63 @@ export class AnalyticsService {
     const fromDate = new Date(startDate);
     const toDate = new Date(endDate);
 
-    // Get company location for holidays
-    const location = await this.prisma.companyLocation.findUnique({
-      where: { companyId },
-    });
-
-    // Get all active users (filtered by team scope if applicable)
-    const users = await this.prisma.user.findMany({
-      where: {
-        companyId,
-        isActive: true,
-        deletedAt: null,
-        ...(options?.userIds && { id: { in: options.userIds } }),
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        hourlyCost: true,
-        createdAt: true,
-        team: {
-          select: {
-            id: true,
-            name: true,
+    // Step 1: Fetch users and company location
+    const [users, location] = await Promise.all([
+      this.prisma.user.findMany({
+        where: {
+          companyId,
+          isActive: true,
+          deletedAt: null,
+          ...(options?.userIds && { id: { in: options.userIds } }),
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          hourlyCost: true,
+          createdAt: true,
+          team: {
+            select: {
+              id: true,
+              name: true,
+            },
           },
         },
-      },
-    });
+      }),
+      this.prisma.companyLocation.findUnique({
+        where: { companyId },
+      }),
+    ]);
 
-    // Fetch holidays once (shared across all users)
-    const [publicHolidays, companyHolidays] = await Promise.all([
+    // Early return if no users
+    if (users.length === 0) {
+      return {
+        startDate,
+        endDate,
+        users: [],
+        totals: {
+          expectedMinutes: 0,
+          loggedMinutes: 0,
+          differenceMinutes: 0,
+          vacationDays: 0,
+          sickLeaveDays: 0,
+          otherAbsenceDays: 0,
+          totalCost: 0,
+        },
+      };
+    }
+
+    const userIds = users.map((u) => u.id);
+
+    // Step 2: Batch fetch ALL data in parallel (5 queries total)
+    const [
+      publicHolidays,
+      companyHolidays,
+      companyDefaultSchedules,
+      userScheduleOverrides,
+      allAbsences,
+      allTimeEntries,
+    ] = await Promise.all([
       location
         ? this.holidaysService.getPublicHolidaysInRange(
             location.regionCode,
@@ -470,21 +463,104 @@ export class AnalyticsService {
         fromDate,
         toDate,
       ),
+      this.prisma.workSchedule.findMany({
+        where: { companyId, userId: null },
+      }),
+      this.prisma.workSchedule.findMany({
+        where: { companyId, userId: { in: userIds } },
+      }),
+      this.prisma.userAbsence.findMany({
+        where: {
+          companyId,
+          userId: { in: userIds },
+          status: 'APPROVED',
+          startDate: { lte: toDate },
+          endDate: { gte: fromDate },
+        },
+        orderBy: { startDate: 'asc' },
+      }),
+      this.prisma.timeEntry.findMany({
+        where: {
+          companyId,
+          userId: { in: userIds },
+          startTime: { gte: fromDate, lte: toDate },
+        },
+      }),
     ]);
 
-    // Process each user in parallel
-    const userSummaries = await Promise.all(
-      users.map((user) =>
-        this.calculateUserPayrollSummary(
-          user,
-          companyId,
-          fromDate,
-          toDate,
-          publicHolidays,
-          companyHolidays,
-        ),
-      ),
+    // Step 3: Build lookup maps for shared data
+    const publicHolidayMap = new Map<string, PublicHoliday>();
+    publicHolidays.forEach((h) => {
+      publicHolidayMap.set(this.toDateKey(h.date), h);
+    });
+
+    const companyHolidayMap = new Map<string, CompanyHoliday>();
+    companyHolidays.forEach((h) => {
+      companyHolidayMap.set(this.toDateKey(h.date), h);
+    });
+
+    // Build default schedule map (shared across users)
+    const defaultScheduleMap = new Map<number, WorkSchedule>();
+    companyDefaultSchedules.forEach((s) =>
+      defaultScheduleMap.set(s.dayOfWeek, s),
     );
+
+    // Group user-specific data by userId
+    const scheduleOverridesByUser = new Map<string, WorkSchedule[]>();
+    userScheduleOverrides.forEach((s) => {
+      if (s.userId) {
+        const existing = scheduleOverridesByUser.get(s.userId) || [];
+        existing.push(s);
+        scheduleOverridesByUser.set(s.userId, existing);
+      }
+    });
+
+    const absencesByUser = new Map<string, UserAbsence[]>();
+    allAbsences.forEach((a) => {
+      const existing = absencesByUser.get(a.userId) || [];
+      existing.push(a);
+      absencesByUser.set(a.userId, existing);
+    });
+
+    const entriesByUser = new Map<string, TimeEntry[]>();
+    allTimeEntries.forEach((e) => {
+      const existing = entriesByUser.get(e.userId) || [];
+      existing.push(e);
+      entriesByUser.set(e.userId, existing);
+    });
+
+    // Step 4: Process each user synchronously (no more DB calls)
+    const userSummaries = users.map((user) => {
+      // Merge default schedules with user overrides
+      const userOverrides = scheduleOverridesByUser.get(user.id) || [];
+      const overrideMap = new Map<number, WorkSchedule>();
+      userOverrides.forEach((o) => overrideMap.set(o.dayOfWeek, o));
+
+      const effectiveScheduleMap = new Map<number, WorkSchedule>();
+      defaultScheduleMap.forEach((schedule, dayOfWeek) => {
+        effectiveScheduleMap.set(
+          dayOfWeek,
+          overrideMap.get(dayOfWeek) || schedule,
+        );
+      });
+      // Include any override days not in defaults
+      userOverrides.forEach((o) => {
+        if (!defaultScheduleMap.has(o.dayOfWeek)) {
+          effectiveScheduleMap.set(o.dayOfWeek, o);
+        }
+      });
+
+      return this.calculateUserPayrollSummaryFromData(
+        user,
+        fromDate,
+        toDate,
+        effectiveScheduleMap,
+        absencesByUser.get(user.id) || [],
+        entriesByUser.get(user.id) || [],
+        publicHolidayMap,
+        companyHolidayMap,
+      );
+    });
 
     // Calculate totals
     const totals = this.calculatePayrollTotals(userSummaries);
@@ -501,9 +577,9 @@ export class AnalyticsService {
   }
 
   /**
-   * Calculate payroll summary for a single user
+   * Calculate payroll summary for a single user from pre-fetched data (no DB calls)
    */
-  private async calculateUserPayrollSummary(
+  private calculateUserPayrollSummaryFromData(
     user: {
       id: string;
       name: string;
@@ -512,52 +588,33 @@ export class AnalyticsService {
       createdAt: Date;
       team: { id: string; name: string } | null;
     },
-    companyId: string,
     fromDate: Date,
     toDate: Date,
-    publicHolidays: PublicHoliday[],
-    companyHolidays: CompanyHoliday[],
-  ): Promise<PayrollUserSummary> {
-    // Fetch user-specific data in parallel
-    const [schedules, absences, timeEntries] = await Promise.all([
-      this.workSchedulesService.getWorkSchedules(companyId, user.id),
-      this.absencesService.getAbsencesInRange(
-        companyId,
-        user.id,
-        fromDate,
-        toDate,
-      ),
-      this.timeEntriesService.getTimeEntriesInRange(
-        companyId,
-        user.id,
-        fromDate,
-        toDate,
-      ),
-    ]);
-
-    // Build lookup maps
-    const publicHolidayMap = new Map<string, PublicHoliday>();
-    publicHolidays.forEach((h) => {
-      const dateKey = h.date.toISOString().split('T')[0];
-      publicHolidayMap.set(dateKey, h);
-    });
-
-    const companyHolidayMap = new Map<string, CompanyHoliday>();
-    companyHolidays.forEach((h) => {
-      const dateKey = h.date.toISOString().split('T')[0];
-      companyHolidayMap.set(dateKey, h);
-    });
-
-    const scheduleMap = new Map<number, WorkSchedule>();
-    schedules.forEach((s) => scheduleMap.set(s.dayOfWeek, s));
-
+    scheduleMap: Map<number, WorkSchedule>,
+    absences: UserAbsence[],
+    timeEntries: TimeEntry[],
+    publicHolidayMap: Map<string, PublicHoliday>,
+    companyHolidayMap: Map<string, CompanyHoliday>,
+  ): PayrollUserSummary {
     // Group time entries by date
     const entriesByDate = new Map<string, TimeEntry[]>();
     timeEntries.forEach((e) => {
-      const dateKey = e.startTime.toISOString().split('T')[0];
+      const dateKey = this.toDateKey(e.startTime);
       const existing = entriesByDate.get(dateKey) || [];
       existing.push(e);
       entriesByDate.set(dateKey, existing);
+    });
+
+    // Pre-index absences by date for O(1) lookup (instead of O(n) find per day)
+    const absenceByDate = new Map<string, UserAbsence>();
+    absences.forEach((absence) => {
+      const absenceStart = new Date(absence.startDate);
+      const absenceEnd = new Date(absence.endDate);
+      const indexDate = new Date(absenceStart);
+      while (indexDate <= absenceEnd) {
+        absenceByDate.set(this.toDateKey(indexDate), absence);
+        indexDate.setUTCDate(indexDate.getUTCDate() + 1);
+      }
     });
 
     // Initialize counters
@@ -574,7 +631,7 @@ export class AnalyticsService {
     const currentDate = new Date(fromDate);
 
     while (currentDate <= toDate) {
-      const dateKey = currentDate.toISOString().split('T')[0];
+      const dateKey = this.toDateKey(currentDate);
       const dayOfWeek = (currentDate.getUTCDay() + 6) % 7; // 0 = Monday ... 6 = Sunday
       const schedule = scheduleMap.get(dayOfWeek);
 
@@ -592,9 +649,8 @@ export class AnalyticsService {
 
       const publicHoliday = publicHolidayMap.get(dateKey);
       const companyHoliday = companyHolidayMap.get(dateKey);
-      const absence = absences.find(
-        (a) => currentDate >= a.startDate && currentDate <= a.endDate,
-      );
+      // O(1) lookup instead of O(n) find
+      const absence = absenceByDate.get(dateKey);
 
       const dayEntries = entriesByDate.get(dateKey) || [];
       // Only count WORK entries toward logged time (exclude pauses)

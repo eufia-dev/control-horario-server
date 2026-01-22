@@ -1,11 +1,3 @@
-import { IsIn, IsNotEmpty } from 'class-validator';
-
-export class WorkerBreakdownQueryDto {
-  @IsIn(['internal', 'external'])
-  @IsNotEmpty()
-  type: 'internal' | 'external';
-}
-
 export interface WorkerInfo {
   id: string;
   name: string;
@@ -21,7 +13,6 @@ export interface WorkerProjectItem {
 }
 
 export interface WorkerBreakdownResponse {
-  workerType: 'internal' | 'external';
   worker: WorkerInfo;
   projects: WorkerProjectItem[];
 }

@@ -17,10 +17,7 @@ import { TeamScopeService } from '../auth/team-scope.service.js';
 import { AnalyticsService } from './analytics.service.js';
 import type { ProjectBreakdownResponse } from './dto/project-breakdown.dto.js';
 import type { ProjectsSummaryResponse } from './dto/projects-summary.dto.js';
-import {
-  WorkerBreakdownQueryDto,
-  type WorkerBreakdownResponse,
-} from './dto/worker-breakdown.dto.js';
+import type { WorkerBreakdownResponse } from './dto/worker-breakdown.dto.js';
 import type { WorkersSummaryResponse } from './dto/workers-summary.dto.js';
 import {
   PayrollSummaryQueryDto,
@@ -84,7 +81,7 @@ export class AnalyticsController {
 
   /**
    * GET /analytics/workers-summary
-   * Returns aggregated data for all active workers (users + externals)
+   * Returns aggregated data for all active workers
    * Team leaders only see their team members
    */
   @Get('workers-summary')
@@ -100,7 +97,6 @@ export class AnalyticsController {
   /**
    * GET /analytics/workers/:workerId/breakdown
    * Returns per-project breakdown for a specific worker
-   * Query param: type (required) - 'internal' or 'external'
    * Team leaders can only access their team members
    * Requires projects feature to be enabled
    */
@@ -108,34 +104,20 @@ export class AnalyticsController {
   @UseGuards(ProjectsFeatureGuard)
   async getWorkerBreakdown(
     @Param('workerId', ParseUUIDPipe) workerId: string,
-    @Query() query: WorkerBreakdownQueryDto,
     @Req() req: RequestWithUser,
   ): Promise<WorkerBreakdownResponse> {
-    // For internal workers, check team scope
-    if (query.type === 'internal') {
-      const canAccess = await this.teamScopeService.canAccessUser(
-        req.user,
-        workerId,
-      );
-      if (!canAccess) {
-        throw new ForbiddenException(
-          'No tienes acceso a las analíticas de este trabajador',
-        );
-      }
-    }
-    // External workers are managed at company level, only full admins can access
-    if (
-      query.type === 'external' &&
-      !this.teamScopeService.isFullAdmin(req.user)
-    ) {
+    const canAccess = await this.teamScopeService.canAccessUser(
+      req.user,
+      workerId,
+    );
+    if (!canAccess) {
       throw new ForbiddenException(
-        'No tienes acceso a las analíticas de trabajadores externos',
+        'No tienes acceso a las analíticas de este trabajador',
       );
     }
 
     return this.analyticsService.getWorkerBreakdown(
       workerId,
-      query.type,
       req.user.companyId,
     );
   }
