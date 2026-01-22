@@ -238,7 +238,6 @@ export class AnalyticsService {
       this.prisma.user.findMany({
         where: {
           companyId,
-          isActive: true,
           // Filter by userIds if provided (for team scope)
           ...(options?.userIds && { id: { in: options.userIds } }),
         },
@@ -254,7 +253,6 @@ export class AnalyticsService {
         where: {
           companyId,
           user: {
-            isActive: true,
             // Filter by userIds if provided (for team scope)
             ...(options?.userIds && { id: { in: options.userIds } }),
           },
