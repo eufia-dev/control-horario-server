@@ -11,14 +11,19 @@ export type DayStatus =
   | 'FUTURE'
   | 'BEFORE_USER_CREATED';
 
+export interface TimeEntryBriefProject {
+  id: string;
+  code: string;
+  name: string;
+}
+
 export interface TimeEntryBrief {
   id: string;
   startTime: Date;
   endTime: Date;
   durationMinutes: number;
   entryType: EntryType;
-  projectId: string | null;
-  projectName: string | null;
+  project: TimeEntryBriefProject | null;
 }
 
 export interface CalendarDay {
@@ -30,7 +35,7 @@ export interface CalendarDay {
   expectedMinutes: number;
   loggedMinutes: number;
   entries: TimeEntryBrief[];
-  isOvertime?: boolean; // Worked on a non-working day
+  overtimeMinutes?: number; // Extra minutes beyond expected (all logged minutes for non-working days)
   isOutsideMonth?: boolean; // Padding day from previous/next month (for month-based queries)
 }
 

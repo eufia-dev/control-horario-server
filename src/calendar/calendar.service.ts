@@ -193,20 +193,18 @@ export class CalendarService {
       ]);
 
     // Build calendar days with isOutsideMonth flag
-    const days = this.buildCalendarDaysForMonth(
+    const days = this.buildCalendarDays(
       displayFrom,
       displayTo,
-      monthStart,
-      monthEnd,
       schedules,
       publicHolidays,
       companyHolidays,
       absences,
       timeEntries,
       user.createdAt,
+      { monthStart, monthEnd },
     );
 
-    // Get project breakdown from time entries (filter to month range only)
     const projectBreakdown = this.computeProjectBreakdown(
       timeEntries,
       monthStart,
@@ -259,133 +257,8 @@ export class CalendarService {
   }
 
   /**
-   * Build array of calendar days for month view with isOutsideMonth flag
-   */
-  private buildCalendarDaysForMonth(
-    from: Date,
-    to: Date,
-    monthStart: Date,
-    monthEnd: Date,
-    schedules: WorkSchedule[],
-    publicHolidays: PublicHoliday[],
-    companyHolidays: CompanyHoliday[],
-    absences: UserAbsence[],
-    timeEntries: (TimeEntry & {
-      project: { id: string; name: string; code: string } | null;
-    })[],
-    userCreatedAt: Date,
-  ): CalendarDay[] {
-    const days: CalendarDay[] = [];
-
-    // Create maps for quick lookup
-    const publicHolidayMap = new Map<string, PublicHoliday>();
-    publicHolidays.forEach((h) => {
-      const dateKey = h.date.toISOString().split('T')[0];
-      publicHolidayMap.set(dateKey, h);
-    });
-
-    const companyHolidayMap = new Map<string, CompanyHoliday>();
-    companyHolidays.forEach((h) => {
-      const dateKey = h.date.toISOString().split('T')[0];
-      companyHolidayMap.set(dateKey, h);
-    });
-
-    // Create schedule map by day of week
-    const scheduleMap = new Map<number, WorkSchedule>();
-    schedules.forEach((s) => {
-      scheduleMap.set(s.dayOfWeek, s);
-    });
-
-    // Group time entries by date
-    const entriesByDate = new Map<
-      string,
-      (TimeEntry & {
-        project: { id: string; name: string; code: string } | null;
-      })[]
-    >();
-    timeEntries.forEach((e) => {
-      const dateKey = e.startTime.toISOString().split('T')[0];
-      const existing = entriesByDate.get(dateKey) || [];
-      existing.push(e);
-      entriesByDate.set(dateKey, existing);
-    });
-
-    const currentDate = new Date(from);
-    while (currentDate <= to) {
-      const dateKey = currentDate.toISOString().split('T')[0];
-      const dayOfWeek = (currentDate.getUTCDay() + 6) % 7; // 0 = Monday ... 6 = Sunday
-      const schedule = scheduleMap.get(dayOfWeek);
-
-      const publicHoliday = publicHolidayMap.get(dateKey);
-      const companyHoliday = companyHolidayMap.get(dateKey);
-      const absence = absences.find(
-        (a) => currentDate >= a.startDate && currentDate <= a.endDate,
-      );
-
-      const dayEntries = entriesByDate.get(dateKey) || [];
-      // Only count WORK entries toward logged time (exclude pauses)
-      const loggedMinutes = dayEntries
-        .filter((e) => e.entryType === 'WORK')
-        .reduce((sum, e) => sum + e.durationMinutes, 0);
-
-      const expectedMinutes = this.calculateExpectedMinutes(schedule);
-
-      const { status, holidayName, absenceType, isOvertime } =
-        this.determineStatus(
-          currentDate,
-          userCreatedAt,
-          publicHoliday,
-          companyHoliday,
-          absence,
-          schedule,
-          loggedMinutes,
-          expectedMinutes,
-        );
-
-      // Set expectedMinutes to 0 for non-working days, holidays, absences, and days before user was created
-      const effectiveExpectedMinutes =
-        status === 'PUBLIC_HOLIDAY' ||
-        status === 'COMPANY_HOLIDAY' ||
-        status === 'ABSENCE' ||
-        status === 'NON_WORKING_DAY' ||
-        status === 'BEFORE_USER_CREATED'
-          ? 0
-          : expectedMinutes;
-
-      const entryBriefs: TimeEntryBrief[] = dayEntries.map((e) => ({
-        id: e.id,
-        startTime: e.startTime,
-        endTime: e.endTime,
-        durationMinutes: e.durationMinutes,
-        entryType: e.entryType,
-        projectId: e.project?.id || null,
-        projectName: e.project?.name || null,
-      }));
-
-      // Check if day is outside the target month
-      const isOutsideMonth = currentDate < monthStart || currentDate > monthEnd;
-
-      days.push({
-        date: dateKey,
-        dayOfWeek,
-        status,
-        holidayName,
-        absenceType,
-        expectedMinutes: effectiveExpectedMinutes,
-        loggedMinutes,
-        entries: entryBriefs,
-        isOvertime,
-        isOutsideMonth: isOutsideMonth || undefined,
-      });
-
-      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
-    }
-
-    return days;
-  }
-
-  /**
    * Build array of calendar days with computed status
+   * When monthBoundaries is provided, sets isOutsideMonth flag for days outside the target month
    */
   private buildCalendarDays(
     from: Date,
@@ -398,6 +271,7 @@ export class CalendarService {
       project: { id: string; name: string; code: string } | null;
     })[],
     userCreatedAt: Date,
+    monthBoundaries?: { monthStart: Date; monthEnd: Date },
   ): CalendarDay[] {
     const days: CalendarDay[] = [];
 
@@ -447,14 +321,13 @@ export class CalendarService {
       );
 
       const dayEntries = entriesByDate.get(dateKey) || [];
-      // Only count WORK entries toward logged time (exclude pauses)
       const loggedMinutes = dayEntries
-        .filter((e) => e.entryType === 'WORK')
+        .filter((e) => e.entryType === 'WORK' || e.entryType === 'PAUSE_COFFEE')
         .reduce((sum, e) => sum + e.durationMinutes, 0);
 
       const expectedMinutes = this.calculateExpectedMinutes(schedule);
 
-      const { status, holidayName, absenceType, isOvertime } =
+      const { status, holidayName, absenceType, overtimeMinutes } =
         this.determineStatus(
           currentDate,
           userCreatedAt,
@@ -482,9 +355,16 @@ export class CalendarService {
         endTime: e.endTime,
         durationMinutes: e.durationMinutes,
         entryType: e.entryType,
-        projectId: e.project?.id || null,
-        projectName: e.project?.name || null,
+        project: e.project
+          ? { id: e.project.id, code: e.project.code, name: e.project.name }
+          : null,
       }));
+
+      // Check if day is outside the target month (only when monthBoundaries provided)
+      const isOutsideMonth = monthBoundaries
+        ? currentDate < monthBoundaries.monthStart ||
+          currentDate > monthBoundaries.monthEnd
+        : undefined;
 
       days.push({
         date: dateKey,
@@ -495,7 +375,8 @@ export class CalendarService {
         expectedMinutes: effectiveExpectedMinutes,
         loggedMinutes,
         entries: entryBriefs,
-        isOvertime,
+        overtimeMinutes,
+        isOutsideMonth: isOutsideMonth || undefined,
       });
 
       currentDate.setUTCDate(currentDate.getUTCDate() + 1);
@@ -552,7 +433,7 @@ export class CalendarService {
     status: DayStatus;
     holidayName?: string;
     absenceType?: UserAbsence['type'];
-    isOvertime?: boolean;
+    overtimeMinutes?: number;
   } {
     const today = new Date();
 
@@ -589,53 +470,56 @@ export class CalendarService {
       return { status: 'FUTURE' };
     }
 
-    // Public holiday
+    // Public holiday - all logged minutes are overtime
     if (publicHoliday) {
       return {
         status: 'PUBLIC_HOLIDAY',
         holidayName: publicHoliday.localName || publicHoliday.name,
-        isOvertime: loggedMinutes > 0,
+        overtimeMinutes: loggedMinutes,
       };
     }
 
-    // Company holiday
+    // Company holiday - all logged minutes are overtime
     if (companyHoliday) {
       return {
         status: 'COMPANY_HOLIDAY',
         holidayName: companyHoliday.name,
-        isOvertime: loggedMinutes > 0,
+        overtimeMinutes: loggedMinutes,
       };
     }
 
     // Non-working day (no schedule for this day of week)
-    // Non-working days take precedence over absences
+    // Non-working days take precedence over absences - all logged minutes are overtime
     if (!schedule || expectedMinutes === 0) {
       return {
         status: 'NON_WORKING_DAY',
-        isOvertime: loggedMinutes > 0,
+        overtimeMinutes: loggedMinutes,
       };
     }
 
-    // Absence (only if it's a workday)
+    // Absence (only if it's a workday) - all logged minutes are overtime
     if (absence) {
       return {
         status: 'ABSENCE',
         absenceType: absence.type,
-        isOvertime: loggedMinutes > 0,
+        overtimeMinutes: loggedMinutes,
       };
     }
 
+    // Working day - calculate overtime as minutes beyond expected
+    const overtimeMinutes = Math.max(0, loggedMinutes - expectedMinutes);
+
     // Working day - check if worked
     if (loggedMinutes === 0) {
-      return { status: 'MISSING_LOGS' };
+      return { status: 'MISSING_LOGS', overtimeMinutes: 0 };
     }
 
     // Partially worked (logged less than 80% of expected)
     if (loggedMinutes < expectedMinutes * 0.8) {
-      return { status: 'PARTIALLY_WORKED' };
+      return { status: 'PARTIALLY_WORKED', overtimeMinutes };
     }
 
-    return { status: 'WORKED' };
+    return { status: 'WORKED', overtimeMinutes };
   }
 
   private calculateSummary(
@@ -717,7 +601,6 @@ export class CalendarService {
     monthStart: Date,
     monthEnd: Date,
   ): ProjectBreakdown[] | undefined {
-    // Filter entries: WORK type, has project, within month range
     const projectEntries = timeEntries.filter(
       (e) =>
         e.entryType === 'WORK' &&

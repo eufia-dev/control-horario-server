@@ -433,6 +433,7 @@ export class AnalyticsService {
           vacationDays: 0,
           sickLeaveDays: 0,
           otherAbsenceDays: 0,
+          coffeePauseMinutes: 0,
           totalCost: 0,
         },
       };
@@ -624,6 +625,7 @@ export class AnalyticsService {
     let vacationDays = 0;
     let sickLeaveDays = 0;
     let otherAbsenceDays = 0;
+    let coffeePauseMinutes = 0;
 
     const today = new Date();
     const currentDate = new Date(fromDate);
@@ -651,12 +653,18 @@ export class AnalyticsService {
       const absence = absenceByDate.get(dateKey);
 
       const dayEntries = entriesByDate.get(dateKey) || [];
-      // Only count WORK entries toward logged time (exclude pauses)
+      // Count WORK and PAUSE_COFFEE entries toward logged time (exclude PAUSE_LUNCH and PAUSE_PERSONAL)
       const dayLoggedMinutes = dayEntries
-        .filter((e) => e.entryType === 'WORK')
+        .filter((e) => e.entryType === 'WORK' || e.entryType === 'PAUSE_COFFEE')
+        .reduce((sum, e) => sum + e.durationMinutes, 0);
+
+      // Track coffee pause minutes separately
+      const dayCoffeePauseMinutes = dayEntries
+        .filter((e) => e.entryType === 'PAUSE_COFFEE')
         .reduce((sum, e) => sum + e.durationMinutes, 0);
 
       loggedMinutes += dayLoggedMinutes;
+      coffeePauseMinutes += dayCoffeePauseMinutes;
 
       const dayExpectedMinutes =
         this.calculateExpectedMinutesFromSchedule(schedule);
@@ -716,6 +724,7 @@ export class AnalyticsService {
       vacationDays,
       sickLeaveDays,
       otherAbsenceDays,
+      coffeePauseMinutes,
       totalCost: this.calculateCost(loggedMinutes, hourlyCost),
     };
   }
@@ -771,6 +780,7 @@ export class AnalyticsService {
         vacationDays: totals.vacationDays + user.vacationDays,
         sickLeaveDays: totals.sickLeaveDays + user.sickLeaveDays,
         otherAbsenceDays: totals.otherAbsenceDays + user.otherAbsenceDays,
+        coffeePauseMinutes: totals.coffeePauseMinutes + user.coffeePauseMinutes,
         totalCost: this.roundToTwoDecimals(totals.totalCost + user.totalCost),
       }),
       {
@@ -780,6 +790,7 @@ export class AnalyticsService {
         vacationDays: 0,
         sickLeaveDays: 0,
         otherAbsenceDays: 0,
+        coffeePauseMinutes: 0,
         totalCost: 0,
       },
     );

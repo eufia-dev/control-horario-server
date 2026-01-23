@@ -533,12 +533,12 @@ export class CashFlowService {
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 0, 23, 59, 59, 999);
 
-    // Get all time entries for this project in the month
+    // Get all time entries for this project in the month (WORK and PAUSE_COFFEE count as worked time)
     const timeEntries = await this.prisma.timeEntry.findMany({
       where: {
         projectId,
         companyId,
-        entryType: 'WORK',
+        entryType: { in: ['WORK', 'PAUSE_COFFEE'] },
         startTime: {
           gte: startDate,
           lte: endDate,

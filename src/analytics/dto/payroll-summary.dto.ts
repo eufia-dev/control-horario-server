@@ -23,6 +23,7 @@ export interface PayrollUserSummary {
   vacationDays: number;
   sickLeaveDays: number;
   otherAbsenceDays: number;
+  coffeePauseMinutes: number;
   totalCost: number;
 }
 
@@ -33,6 +34,7 @@ export interface PayrollSummaryTotals {
   vacationDays: number;
   sickLeaveDays: number;
   otherAbsenceDays: number;
+  coffeePauseMinutes: number;
   totalCost: number;
 }
 
