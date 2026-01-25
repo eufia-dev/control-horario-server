@@ -55,7 +55,7 @@ export class TeamScopeService {
       return true;
     }
 
-    // TEAM_LEADER: check if target user is in their team
+    // TEAM_LEADER: check if target user is in their team AND not an admin/owner
     if (user.role === 'TEAM_LEADER' && user.teamId) {
       const targetUser = await this.prisma.user.findFirst({
         where: {
@@ -63,6 +63,7 @@ export class TeamScopeService {
           companyId: user.companyId,
           teamId: user.teamId,
           deletedAt: null,
+          role: { notIn: ['OWNER', 'ADMIN'] },
         },
       });
       return !!targetUser;

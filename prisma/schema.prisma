@@ -20,7 +20,7 @@ model Company {
   billingPlan           BillingPlan @default(BASIC) @map("billing_plan")
   allowUserEditSchedule Boolean     @default(false) @map("allow_user_edit_schedule")
   hasProjectsFeature    Boolean     @default(false) @map("has_projects_feature")
-  hasCashFlowFeature    Boolean     @default(false) @map("has_cash_flow_feature")
+  hasCostsFeature       Boolean     @default(false) @map("has_costs_feature")
   inviteCode            String?     @unique @map("invite_code") @db.VarChar(20)
 
   // Relations
@@ -225,7 +225,7 @@ model Provider {
 }
 
 // ---------------------------------------------------------
-// 4.1 CASH FLOW TABLES
+// 4.1 COSTS TABLES
 // ---------------------------------------------------------
 model ProjectMonthlyRevenue {
   id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid

@@ -121,6 +121,7 @@ export class UsersService {
     id: string,
     updateUserDto: UpdateUserDto,
     companyId: string,
+    requestingUser: { sub: string; role: string },
   ): Promise<UserResponse> {
     let existing: User | null = null;
     let emailChanged = false;
@@ -138,6 +139,35 @@ export class UsersService {
         throw new NotFoundException(`Usuario con ID ${id} no encontrado`);
       }
 
+      // Prevent self-role change
+      if (
+        id === requestingUser.sub &&
+        updateUserDto.role !== undefined &&
+        (updateUserDto.role as string) !== (existing.role as string)
+      ) {
+        throw new ForbiddenException('No puedes cambiar tu propio rol');
+      }
+
+      // Only OWNER/ADMIN can edit OWNER users
+      if (
+        existing.role === 'OWNER' &&
+        !['OWNER', 'ADMIN'].includes(requestingUser.role)
+      ) {
+        throw new ForbiddenException(
+          'Solo los administradores pueden editar al propietario',
+        );
+      }
+
+      // Only OWNER/ADMIN can edit ADMIN users
+      if (
+        existing.role === 'ADMIN' &&
+        !['OWNER', 'ADMIN'].includes(requestingUser.role)
+      ) {
+        throw new ForbiddenException(
+          'Solo los administradores pueden editar a otros administradores',
+        );
+      }
+
       // Determine final role and teamId after update
       const finalRole = (updateUserDto.role ?? existing.role) as string;
       const finalTeamId =
@@ -150,6 +180,23 @@ export class UsersService {
         throw new BadRequestException(
           'Un líder de equipo debe tener un equipo asignado',
         );
+      }
+
+      // If demoting an OWNER, ensure at least one other owner remains
+      if (existing.role === 'OWNER' && finalRole !== 'OWNER') {
+        const ownerCount = await this.prisma.user.count({
+          where: {
+            companyId,
+            role: 'OWNER',
+            deletedAt: null,
+            id: { not: id },
+          },
+        });
+        if (ownerCount === 0) {
+          throw new ForbiddenException(
+            'Debe haber al menos un propietario en la empresa',
+          );
+        }
       }
 
       emailChanged =
@@ -280,7 +327,11 @@ export class UsersService {
     }
   }
 
-  async delete(id: string, companyId: string): Promise<void> {
+  async delete(
+    id: string,
+    companyId: string,
+    requestingUser: { sub: string; role: string },
+  ): Promise<void> {
     try {
       const user = await this.prisma.user.findFirst({
         where: {
@@ -293,10 +344,36 @@ export class UsersService {
         throw new NotFoundException(`Usuario con ID ${id} no encontrado`);
       }
 
-      if (user.role === 'OWNER') {
+      // Prevent self-deletion
+      if (id === requestingUser.sub) {
+        throw new ForbiddenException('No puedes eliminarte a ti mismo');
+      }
+
+      // Only OWNER/ADMIN can delete ADMIN users
+      if (
+        user.role === 'ADMIN' &&
+        !['OWNER', 'ADMIN'].includes(requestingUser.role)
+      ) {
         throw new ForbiddenException(
-          'No se puede eliminar al propietario de la empresa',
+          'Solo los administradores pueden eliminar a otros administradores',
         );
+      }
+
+      // If deleting an OWNER, ensure at least one other owner remains
+      if (user.role === 'OWNER') {
+        const ownerCount = await this.prisma.user.count({
+          where: {
+            companyId,
+            role: 'OWNER',
+            deletedAt: null,
+            id: { not: id },
+          },
+        });
+        if (ownerCount === 0) {
+          throw new ForbiddenException(
+            'Debe haber al menos un propietario en la empresa',
+          );
+        }
       }
 
       // Check if this authId is used by other active users (multitenancy)

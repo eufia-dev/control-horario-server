@@ -13,7 +13,7 @@ import {
 import type { Request } from 'express';
 import { TeamLeaderGuard } from '../auth/team-leader.guard.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
-import { CashFlowFeatureGuard } from '../auth/cash-flow-feature.guard.js';
+import { CostsFeatureGuard } from '../auth/costs-feature.guard.js';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
 import { CreateProviderDto, UpdateProviderDto } from './dto/index.js';
 import {
@@ -24,7 +24,7 @@ import {
 type RequestWithUser = Request & { user: JwtPayload };
 
 @Controller('providers')
-@UseGuards(JwtAuthGuard, CashFlowFeatureGuard, TeamLeaderGuard)
+@UseGuards(JwtAuthGuard, CostsFeatureGuard, TeamLeaderGuard)
 export class ProvidersController {
   constructor(private readonly providersService: ProvidersService) {}
 

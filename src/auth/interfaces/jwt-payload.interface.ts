@@ -9,5 +9,5 @@ export interface JwtPayload {
   relation: RelationType; // EMPLOYEE | CONTRACTOR | GUEST
   teamId: string | null; // Team ID (for team-scoped access)
   hasProjectsFeature: boolean; // Whether company has projects feature enabled
-  hasCashFlowFeature: boolean; // Whether company has cash flow feature enabled
+  hasCostsFeature: boolean; // Whether company has costs feature enabled
 }

@@ -11,6 +11,7 @@ import type { CreateCostEstimateDto } from './dto/create-cost-estimate.dto.js';
 import type { UpdateCostEstimateDto } from './dto/update-cost-estimate.dto.js';
 import type { CreateCostActualDto } from './dto/create-cost-actual.dto.js';
 import type { UpdateCostActualDto } from './dto/update-cost-actual.dto.js';
+import type { SaveAnnualCostsDto } from './dto/save-annual-costs.dto.js';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
 import type {
   ProjectMonthlyRevenue,
@@ -66,13 +67,14 @@ export interface CostActualResponse {
   updatedAt: Date | null;
 }
 
-export interface FullMonthlyCashFlowResponse {
+export interface FullMonthlyCostsResponse {
   projectId: string;
   year: number;
   month: number;
   revenue: {
     estimated: number | null;
     actual: number | null;
+    notes: string | null;
   };
   externalCosts: {
     estimated: {
@@ -92,7 +94,7 @@ export interface FullMonthlyCashFlowResponse {
 }
 
 // Response interfaces for bulk endpoint
-export interface MonthCashFlow {
+export interface MonthCosts {
   month: number;
   revenue: {
     estimated: number | null;
@@ -109,21 +111,48 @@ export interface MonthCashFlow {
   };
 }
 
-export interface ProjectCashFlowSummary {
+export interface ProjectCostsSummary {
   projectId: string;
   projectName: string;
   teamId: string | null;
+  teamName: string | null;
   year: number;
-  months: MonthCashFlow[];
+  months: MonthCosts[];
 }
 
-export interface AllProjectsCashFlowResponse {
-  projects: ProjectCashFlowSummary[];
+export interface AllProjectsCostsResponse {
+  projects: ProjectCostsSummary[];
+}
+
+// Response interfaces for annual costs endpoint
+export interface AnnualMonthCosts {
+  month: number;
+  revenueId: string | null;
+  estimatedRevenue: number | null;
+  actualRevenue: number | null;
+  estimatedCosts: CostEstimateResponse[];
+  estimatedCostsTotal: number;
+  actualCosts: CostActualResponse[];
+  actualCostsTotal: number;
+}
+
+export interface AnnualProjectCosts {
+  projectId: string;
+  projectName: string;
+  projectCode: string;
+  teamId: string | null;
+  teamName: string | null;
+  months: AnnualMonthCosts[];
+}
+
+export interface AnnualCostsResponse {
+  year: number;
+  projects: AnnualProjectCosts[];
 }
 
 @Injectable()
-export class CashFlowService {
-  private readonly logger = new Logger(CashFlowService.name);
+export class CostsService {
+  private readonly logger = new Logger(CostsService.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -444,13 +473,13 @@ export class CashFlowService {
 
   // ==================== FULL MONTHLY VIEW ====================
 
-  async getFullMonthlyCashFlow(
+  async getFullMonthlyCosts(
     projectId: string,
     year: number,
     month: number,
     companyId: string,
     user: JwtPayload,
-  ): Promise<FullMonthlyCashFlowResponse> {
+  ): Promise<FullMonthlyCostsResponse> {
     await this.verifyProjectAccess(projectId, companyId, user);
 
     // Fetch all data in parallel
@@ -494,6 +523,7 @@ export class CashFlowService {
       revenue: {
         estimated: estimatedRevenue,
         actual: actualRevenue,
+        notes: revenue?.notes ?? null,
       },
       externalCosts: {
         estimated: {
@@ -565,16 +595,16 @@ export class CashFlowService {
   // ==================== BULK ENDPOINT ====================
 
   /**
-   * Get cash flow data for all projects the user has access to.
+   * Get costs data for all projects the user has access to.
    * - Admin/Owner: All company projects
    * - Team Leader: Only their team's projects
    */
-  async getAllProjectsCashFlow(
+  async getAllProjectsCosts(
     companyId: string,
     user: JwtPayload,
     year: number,
     month?: number,
-  ): Promise<AllProjectsCashFlowResponse> {
+  ): Promise<AllProjectsCostsResponse> {
     // Get accessible projects based on user role
     const teamId = this.teamScopeService.isFullAdmin(user) ? null : user.teamId;
 
@@ -584,7 +614,12 @@ export class CashFlowService {
         isActive: true,
         ...(teamId && { teamId }),
       },
-      select: { id: true, name: true, teamId: true },
+      select: {
+        id: true,
+        name: true,
+        teamId: true,
+        team: { select: { name: true } },
+      },
       orderBy: { name: 'asc' },
     });
 
@@ -593,10 +628,10 @@ export class CashFlowService {
       ? [month]
       : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
-    // Fetch cash flow data for all projects in parallel
+    // Fetch costs data for all projects in parallel
     const projectSummaries = await Promise.all(
       projects.map(async (project) => {
-        const months = await this.getProjectMonthsCashFlow(
+        const months = await this.getProjectMonthsCosts(
           project.id,
           companyId,
           year,
@@ -607,6 +642,7 @@ export class CashFlowService {
           projectId: project.id,
           projectName: project.name,
           teamId: project.teamId,
+          teamName: project.team?.name ?? null,
           year,
           months,
         };
@@ -617,14 +653,14 @@ export class CashFlowService {
   }
 
   /**
-   * Get cash flow data for specific months of a project.
+   * Get costs data for specific months of a project.
    */
-  private async getProjectMonthsCashFlow(
+  private async getProjectMonthsCosts(
     projectId: string,
     companyId: string,
     year: number,
     months: number[],
-  ): Promise<MonthCashFlow[]> {
+  ): Promise<MonthCosts[]> {
     // Fetch all revenues for the year
     const revenues = await this.prisma.projectMonthlyRevenue.findMany({
       where: { projectId, year },
@@ -700,6 +736,258 @@ export class CashFlowService {
               : null,
         },
       };
+    });
+  }
+
+  // ==================== ANNUAL COSTS ====================
+
+  /**
+   * Get annual costs data for all projects the user has access to.
+   * Returns full cost arrays for each month (12 months total).
+   * Uses efficient batch queries to avoid N+1 problems.
+   */
+  async getAnnualProjectsCosts(
+    companyId: string,
+    user: JwtPayload,
+    year: number,
+  ): Promise<AnnualCostsResponse> {
+    // Get accessible projects based on user role
+    const teamId = this.teamScopeService.isFullAdmin(user) ? null : user.teamId;
+
+    const projects = await this.prisma.project.findMany({
+      where: {
+        companyId,
+        isActive: true,
+        ...(teamId && { teamId }),
+      },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        teamId: true,
+        team: { select: { name: true } },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    if (projects.length === 0) {
+      return { year, projects: [] };
+    }
+
+    const projectIds = projects.map((p) => p.id);
+
+    // Batch fetch all data for the year in 3 parallel queries
+    const [revenues, estimates, actuals] = await Promise.all([
+      this.prisma.projectMonthlyRevenue.findMany({
+        where: { projectId: { in: projectIds }, year },
+      }),
+      this.prisma.projectExternalCostEstimate.findMany({
+        where: { projectId: { in: projectIds }, year },
+        include: { provider: true },
+      }),
+      this.prisma.projectExternalCostActual.findMany({
+        where: { projectId: { in: projectIds }, year },
+        include: { provider: true },
+      }),
+    ]);
+
+    // Group data by projectId + month
+    const revenueMap = new Map<string, ProjectMonthlyRevenue>();
+    for (const r of revenues) {
+      revenueMap.set(`${r.projectId}-${r.month}`, r);
+    }
+
+    type EstimateWithProvider = (typeof estimates)[number];
+    const estimatesMap = new Map<string, EstimateWithProvider[]>();
+    for (const e of estimates) {
+      const key = `${e.projectId}-${e.month}`;
+      const list = estimatesMap.get(key) ?? [];
+      list.push(e);
+      estimatesMap.set(key, list);
+    }
+
+    type ActualWithProvider = (typeof actuals)[number];
+    const actualsMap = new Map<string, ActualWithProvider[]>();
+    for (const a of actuals) {
+      const key = `${a.projectId}-${a.month}`;
+      const list = actualsMap.get(key) ?? [];
+      list.push(a);
+      actualsMap.set(key, list);
+    }
+
+    // Build response for all projects
+    const projectCosts: AnnualProjectCosts[] = projects.map((project) => {
+      const months: AnnualMonthCosts[] = [];
+
+      for (let month = 1; month <= 12; month++) {
+        const key = `${project.id}-${month}`;
+        const revenue = revenueMap.get(key);
+        const monthEstimates = estimatesMap.get(key) ?? [];
+        const monthActuals = actualsMap.get(key) ?? [];
+
+        const estimatedCostsTotal = monthEstimates.reduce(
+          (sum, e) => sum + Number(e.amount),
+          0,
+        );
+        const actualCostsTotal = monthActuals.reduce(
+          (sum, a) => sum + Number(a.amount),
+          0,
+        );
+
+        months.push({
+          month,
+          revenueId: revenue?.id ?? null,
+          estimatedRevenue: revenue?.estimatedRevenue
+            ? Number(revenue.estimatedRevenue)
+            : null,
+          actualRevenue: revenue?.actualRevenue
+            ? Number(revenue.actualRevenue)
+            : null,
+          estimatedCosts: monthEstimates.map((e) =>
+            this.toCostEstimateResponse(e),
+          ),
+          estimatedCostsTotal,
+          actualCosts: monthActuals.map((a) => this.toCostActualResponse(a)),
+          actualCostsTotal,
+        });
+      }
+
+      return {
+        projectId: project.id,
+        projectName: project.name,
+        projectCode: project.code,
+        teamId: project.teamId,
+        teamName: project.team?.name ?? null,
+        months,
+      };
+    });
+
+    return { year, projects: projectCosts };
+  }
+
+  /**
+   * Bulk save annual costs data.
+   * Handles revenue upserts and cost estimate create/update operations.
+   * Uses a transaction for atomicity.
+   */
+  async saveAnnualCosts(
+    companyId: string,
+    user: JwtPayload,
+    dto: SaveAnnualCostsDto,
+  ): Promise<void> {
+    // Collect all unique projectIds from the request
+    const projectIds = [...new Set(dto.items.map((item) => item.projectId))];
+
+    // Validate all projects exist and user has access
+    const teamId = this.teamScopeService.isFullAdmin(user) ? null : user.teamId;
+
+    const accessibleProjects = await this.prisma.project.findMany({
+      where: {
+        id: { in: projectIds },
+        companyId,
+        ...(teamId && { teamId }),
+      },
+      select: { id: true },
+    });
+
+    const accessibleProjectIds = new Set(accessibleProjects.map((p) => p.id));
+
+    // Check if any project is not accessible
+    for (const projectId of projectIds) {
+      if (!accessibleProjectIds.has(projectId)) {
+        throw new ForbiddenException(
+          `No tienes acceso al proyecto ${projectId}`,
+        );
+      }
+    }
+
+    // Process all items in a transaction
+    await this.prisma.$transaction(async (tx) => {
+      for (const item of dto.items) {
+        // Handle revenue upsert if provided
+        if (item.revenue) {
+          await tx.projectMonthlyRevenue.upsert({
+            where: {
+              projectId_year_month: {
+                projectId: item.projectId,
+                year: dto.year,
+                month: item.month,
+              },
+            },
+            update: {
+              ...(item.revenue.estimatedRevenue !== undefined && {
+                estimatedRevenue: item.revenue.estimatedRevenue,
+              }),
+              ...(item.revenue.actualRevenue !== undefined && {
+                actualRevenue: item.revenue.actualRevenue,
+              }),
+              ...(item.revenue.notes !== undefined && {
+                notes: item.revenue.notes,
+              }),
+            },
+            create: {
+              projectId: item.projectId,
+              year: dto.year,
+              month: item.month,
+              estimatedRevenue: item.revenue.estimatedRevenue ?? null,
+              actualRevenue: item.revenue.actualRevenue ?? null,
+              notes: item.revenue.notes ?? null,
+            },
+          });
+        }
+
+        // Handle cost estimate operation if provided
+        if (item.costEstimate) {
+          if (item.costEstimate.action === 'create') {
+            await tx.projectExternalCostEstimate.create({
+              data: {
+                projectId: item.projectId,
+                year: dto.year,
+                month: item.month,
+                amount: item.costEstimate.amount,
+                providerId: item.costEstimate.providerId,
+                expenseType: item.costEstimate.expenseType,
+                description: item.costEstimate.description,
+              },
+            });
+          } else {
+            // action === 'update'
+            // Verify the cost estimate exists and belongs to an accessible project
+            const existing = await tx.projectExternalCostEstimate.findUnique({
+              where: { id: item.costEstimate.id },
+              include: { project: true },
+            });
+
+            if (!existing || existing.project.companyId !== companyId) {
+              throw new NotFoundException(
+                `Estimación de coste con ID ${item.costEstimate.id} no encontrada`,
+              );
+            }
+
+            if (!accessibleProjectIds.has(existing.projectId)) {
+              throw new ForbiddenException(
+                `No tienes acceso a la estimación de coste ${item.costEstimate.id}`,
+              );
+            }
+
+            await tx.projectExternalCostEstimate.update({
+              where: { id: item.costEstimate.id },
+              data: {
+                amount: item.costEstimate.amount,
+                ...(item.costEstimate.providerId !== undefined && {
+                  providerId: item.costEstimate.providerId,
+                }),
+                ...(item.costEstimate.expenseType !== undefined && {
+                  expenseType: item.costEstimate.expenseType,
+                }),
+                ...(item.costEstimate.description !== undefined && {
+                  description: item.costEstimate.description,
+                }),
+              },
+            });
+          }
+        }
+      }
     });
   }
 

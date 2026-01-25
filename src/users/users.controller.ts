@@ -60,7 +60,10 @@ export class UsersController {
     @Body() updateUserDto: UpdateUserDto,
     @Req() req: RequestWithUser,
   ): Promise<UserResponse> {
-    return this.usersService.update(id, updateUserDto, req.user.companyId);
+    return this.usersService.update(id, updateUserDto, req.user.companyId, {
+      sub: req.user.sub,
+      role: req.user.role,
+    });
   }
 
   @Delete(':id')
@@ -70,6 +73,9 @@ export class UsersController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithUser,
   ): Promise<void> {
-    return this.usersService.delete(id, req.user.companyId);
+    return this.usersService.delete(id, req.user.companyId, {
+      sub: req.user.sub,
+      role: req.user.role,
+    });
   }
 }

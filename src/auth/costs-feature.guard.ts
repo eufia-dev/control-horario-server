@@ -12,20 +12,20 @@ interface RequestWithUser extends Request {
 }
 
 @Injectable()
-export class CashFlowFeatureGuard implements CanActivate {
+export class CostsFeatureGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest<RequestWithUser>();
 
-    // Cash flow feature requires projects feature to be enabled first
+    // Costs feature requires projects feature to be enabled first
     if (!req.user?.hasProjectsFeature) {
       throw new ForbiddenException(
         'La funcionalidad de proyectos no está habilitada para tu empresa. Contacta con el administrador para activarla.',
       );
     }
 
-    if (!req.user?.hasCashFlowFeature) {
+    if (!req.user?.hasCostsFeature) {
       throw new ForbiddenException(
-        'La funcionalidad de flujo de caja no está habilitada para tu empresa. Contacta con el administrador para activarla.',
+        'La funcionalidad de costos no está habilitada para tu empresa. Contacta con el administrador para activarla.',
       );
     }
 

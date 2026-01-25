@@ -16,16 +16,17 @@ import {
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { TeamLeaderGuard } from '../auth/team-leader.guard.js';
-import { CashFlowFeatureGuard } from '../auth/cash-flow-feature.guard.js';
+import { CostsFeatureGuard } from '../auth/costs-feature.guard.js';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
 import {
-  CashFlowService,
+  CostsService,
   type MonthlyRevenueResponse,
   type CostEstimateResponse,
   type CostActualResponse,
-  type FullMonthlyCashFlowResponse,
-  type AllProjectsCashFlowResponse,
-} from './cash-flow.service.js';
+  type FullMonthlyCostsResponse,
+  type AllProjectsCostsResponse,
+  type AnnualCostsResponse,
+} from './costs.service.js';
 import {
   UpsertMonthlyRevenueDto,
   MonthlyRevenueQueryDto,
@@ -36,33 +37,69 @@ import { CreateCostActualDto } from './dto/create-cost-actual.dto.js';
 import { UpdateCostActualDto } from './dto/update-cost-actual.dto.js';
 import { ExternalCostQueryDto } from './dto/external-cost-query.dto.js';
 import { AllProjectsQueryDto } from './dto/all-projects-query.dto.js';
+import { AnnualCostsQueryDto } from './dto/annual-costs-query.dto.js';
+import { SaveAnnualCostsDto } from './dto/save-annual-costs.dto.js';
 
 type RequestWithUser = Request & { user: JwtPayload };
 
-@Controller('cash-flow')
-@UseGuards(JwtAuthGuard, CashFlowFeatureGuard, TeamLeaderGuard)
-export class CashFlowController {
-  constructor(private readonly cashFlowService: CashFlowService) {}
+@Controller('costs')
+@UseGuards(JwtAuthGuard, CostsFeatureGuard, TeamLeaderGuard)
+export class CostsController {
+  constructor(private readonly costsService: CostsService) {}
 
   // ==================== ALL PROJECTS SUMMARY ====================
 
   /**
-   * GET /cash-flow/projects-summary
-   * Returns cash flow data for all projects the user has access to.
+   * GET /costs/projects-summary
+   * Returns costs data for all projects the user has access to.
    * - Admin/Owner: All company projects
    * - Team Leader: Only their team's projects
    */
   @Get('projects-summary')
-  getAllProjectsCashFlow(
+  getAllProjectsCosts(
     @Query() query: AllProjectsQueryDto,
     @Req() req: RequestWithUser,
-  ): Promise<AllProjectsCashFlowResponse> {
-    return this.cashFlowService.getAllProjectsCashFlow(
+  ): Promise<AllProjectsCostsResponse> {
+    return this.costsService.getAllProjectsCosts(
       req.user.companyId,
       req.user,
       query.year,
       query.month,
     );
+  }
+
+  // ==================== ANNUAL COSTS ====================
+
+  /**
+   * GET /costs/projects-annual?year=2026
+   * Returns full annual costs data for all projects the user has access to.
+   * Includes revenue, cost estimates, and cost actuals for each month.
+   * - Admin/Owner: All company projects
+   * - Team Leader: Only their team's projects
+   */
+  @Get('projects-annual')
+  getAnnualProjectsCosts(
+    @Query() query: AnnualCostsQueryDto,
+    @Req() req: RequestWithUser,
+  ): Promise<AnnualCostsResponse> {
+    return this.costsService.getAnnualProjectsCosts(
+      req.user.companyId,
+      req.user,
+      query.year,
+    );
+  }
+
+  /**
+   * POST /costs/projects-annual
+   * Bulk save annual costs data (revenue upserts and cost estimate operations).
+   * Validates project access for each item.
+   */
+  @Post('projects-annual')
+  saveAnnualCosts(
+    @Body() dto: SaveAnnualCostsDto,
+    @Req() req: RequestWithUser,
+  ): Promise<void> {
+    return this.costsService.saveAnnualCosts(req.user.companyId, req.user, dto);
   }
 
   // ==================== MONTHLY REVENUE ====================
@@ -73,7 +110,7 @@ export class CashFlowController {
     @Query() query: MonthlyRevenueQueryDto,
     @Req() req: RequestWithUser,
   ): Promise<MonthlyRevenueResponse[]> {
-    return this.cashFlowService.getMonthlyRevenues(
+    return this.costsService.getMonthlyRevenues(
       projectId,
       req.user.companyId,
       req.user,
@@ -89,7 +126,7 @@ export class CashFlowController {
     @Body() dto: UpsertMonthlyRevenueDto,
     @Req() req: RequestWithUser,
   ): Promise<MonthlyRevenueResponse> {
-    return this.cashFlowService.upsertMonthlyRevenue(
+    return this.costsService.upsertMonthlyRevenue(
       projectId,
       year,
       month,
@@ -107,7 +144,7 @@ export class CashFlowController {
     @Query() query: ExternalCostQueryDto,
     @Req() req: RequestWithUser,
   ): Promise<CostEstimateResponse[]> {
-    return this.cashFlowService.getCostEstimates(
+    return this.costsService.getCostEstimates(
       projectId,
       req.user.companyId,
       req.user,
@@ -122,7 +159,7 @@ export class CashFlowController {
     @Body() dto: CreateCostEstimateDto,
     @Req() req: RequestWithUser,
   ): Promise<CostEstimateResponse> {
-    return this.cashFlowService.createCostEstimate(
+    return this.costsService.createCostEstimate(
       projectId,
       req.user.companyId,
       req.user,
@@ -136,7 +173,7 @@ export class CashFlowController {
     @Body() dto: UpdateCostEstimateDto,
     @Req() req: RequestWithUser,
   ): Promise<CostEstimateResponse> {
-    return this.cashFlowService.updateCostEstimate(
+    return this.costsService.updateCostEstimate(
       id,
       req.user.companyId,
       req.user,
@@ -149,7 +186,7 @@ export class CashFlowController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithUser,
   ): Promise<void> {
-    return this.cashFlowService.deleteCostEstimate(
+    return this.costsService.deleteCostEstimate(
       id,
       req.user.companyId,
       req.user,
@@ -164,7 +201,7 @@ export class CashFlowController {
     @Query() query: ExternalCostQueryDto,
     @Req() req: RequestWithUser,
   ): Promise<CostActualResponse[]> {
-    return this.cashFlowService.getCostActuals(
+    return this.costsService.getCostActuals(
       projectId,
       req.user.companyId,
       req.user,
@@ -179,7 +216,7 @@ export class CashFlowController {
     @Body() dto: CreateCostActualDto,
     @Req() req: RequestWithUser,
   ): Promise<CostActualResponse> {
-    return this.cashFlowService.createCostActual(
+    return this.costsService.createCostActual(
       projectId,
       req.user.companyId,
       req.user,
@@ -193,7 +230,7 @@ export class CashFlowController {
     @Body() dto: UpdateCostActualDto,
     @Req() req: RequestWithUser,
   ): Promise<CostActualResponse> {
-    return this.cashFlowService.updateCostActual(
+    return this.costsService.updateCostActual(
       id,
       req.user.companyId,
       req.user,
@@ -206,23 +243,19 @@ export class CashFlowController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithUser,
   ): Promise<void> {
-    return this.cashFlowService.deleteCostActual(
-      id,
-      req.user.companyId,
-      req.user,
-    );
+    return this.costsService.deleteCostActual(id, req.user.companyId, req.user);
   }
 
   // ==================== FULL MONTHLY VIEW ====================
 
   @Get('projects/:projectId/monthly/:year/:month')
-  getFullMonthlyCashFlow(
+  getFullMonthlyCosts(
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Param('year', ParseIntPipe) year: number,
     @Param('month', ParseIntPipe) month: number,
     @Req() req: RequestWithUser,
-  ): Promise<FullMonthlyCashFlowResponse> {
-    return this.cashFlowService.getFullMonthlyCashFlow(
+  ): Promise<FullMonthlyCostsResponse> {
+    return this.costsService.getFullMonthlyCosts(
       projectId,
       year,
       month,

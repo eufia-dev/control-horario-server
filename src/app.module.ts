@@ -21,7 +21,7 @@ import { LocationsModule } from './locations/locations.module.js';
 import { WorkSchedulesModule } from './work-schedules/work-schedules.module.js';
 import { RemindersModule } from './reminders/reminders.module.js';
 import { TeamsModule } from './teams/teams.module.js';
-import { CashFlowModule } from './cash-flow/cash-flow.module.js';
+import { CostsModule } from './costs/costs.module.js';
 import { ProvidersModule } from './providers/providers.module.js';
 
 @Module({
@@ -46,7 +46,7 @@ import { ProvidersModule } from './providers/providers.module.js';
     WorkSchedulesModule,
     RemindersModule,
     TeamsModule,
-    CashFlowModule,
+    CostsModule,
     ProvidersModule,
   ],
   controllers: [AppController],
