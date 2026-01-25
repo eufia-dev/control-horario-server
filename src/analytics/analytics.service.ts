@@ -387,7 +387,7 @@ export class AnalyticsService {
     companyId: string,
     startDate: string,
     endDate: string,
-    options?: { userIds?: string[] | null },
+    options?: { userIds?: string[] | null; isFullAdmin?: boolean },
   ): Promise<PayrollSummaryResponse> {
     const fromDate = new Date(startDate);
     const toDate = new Date(endDate);
@@ -420,6 +420,8 @@ export class AnalyticsService {
       }),
     ]);
 
+    const isFullAdmin = options?.isFullAdmin ?? true;
+
     // Early return if no users
     if (users.length === 0) {
       return {
@@ -434,7 +436,7 @@ export class AnalyticsService {
           sickLeaveDays: 0,
           otherAbsenceDays: 0,
           coffeePauseMinutes: 0,
-          totalCost: 0,
+          ...(isFullAdmin && { totalCost: 0 }),
         },
       };
     }
@@ -558,11 +560,12 @@ export class AnalyticsService {
         entriesByUser.get(user.id) || [],
         publicHolidayMap,
         companyHolidayMap,
+        isFullAdmin,
       );
     });
 
     // Calculate totals
-    const totals = this.calculatePayrollTotals(userSummaries);
+    const totals = this.calculatePayrollTotals(userSummaries, isFullAdmin);
 
     // Sort by name
     userSummaries.sort((a, b) => a.name.localeCompare(b.name));
@@ -594,6 +597,7 @@ export class AnalyticsService {
     timeEntries: TimeEntry[],
     publicHolidayMap: Map<string, PublicHoliday>,
     companyHolidayMap: Map<string, CompanyHoliday>,
+    isFullAdmin: boolean = true,
   ): PayrollUserSummary {
     // Group time entries by date
     const entriesByDate = new Map<string, TimeEntry[]>();
@@ -714,7 +718,7 @@ export class AnalyticsService {
       name: user.name,
       email: user.email,
       team: user.team,
-      hourlyCost,
+      ...(isFullAdmin && { hourlyCost }),
       expectedMinutes,
       loggedMinutes,
       differenceMinutes: loggedMinutes - expectedMinutes,
@@ -725,7 +729,7 @@ export class AnalyticsService {
       sickLeaveDays,
       otherAbsenceDays,
       coffeePauseMinutes,
-      totalCost: this.calculateCost(loggedMinutes, hourlyCost),
+      ...(isFullAdmin && { totalCost: this.calculateCost(loggedMinutes, hourlyCost) }),
     };
   }
 
@@ -771,8 +775,9 @@ export class AnalyticsService {
    */
   private calculatePayrollTotals(
     userSummaries: PayrollUserSummary[],
+    isFullAdmin: boolean = true,
   ): PayrollSummaryTotals {
-    return userSummaries.reduce(
+    const baseTotals = userSummaries.reduce(
       (totals, user) => ({
         expectedMinutes: totals.expectedMinutes + user.expectedMinutes,
         loggedMinutes: totals.loggedMinutes + user.loggedMinutes,
@@ -781,7 +786,9 @@ export class AnalyticsService {
         sickLeaveDays: totals.sickLeaveDays + user.sickLeaveDays,
         otherAbsenceDays: totals.otherAbsenceDays + user.otherAbsenceDays,
         coffeePauseMinutes: totals.coffeePauseMinutes + user.coffeePauseMinutes,
-        totalCost: this.roundToTwoDecimals(totals.totalCost + user.totalCost),
+        totalCost: this.roundToTwoDecimals(
+          totals.totalCost + (user.totalCost ?? 0),
+        ),
       }),
       {
         expectedMinutes: 0,
@@ -794,5 +801,13 @@ export class AnalyticsService {
         totalCost: 0,
       },
     );
+
+    // Only include totalCost for admin/owner
+    if (!isFullAdmin) {
+      const { totalCost, ...totalsWithoutCost } = baseTotals;
+      return totalsWithoutCost;
+    }
+
+    return baseTotals;
   }
 }

@@ -127,6 +127,7 @@ export class AnalyticsController {
    * Returns payroll summary for all users in the given date range
    * Includes expected vs logged hours, absence breakdowns, and cost calculations
    * Team leaders only see their team members
+   * Cost data (hourlyCost, totalCost) only included for admin/owner
    */
   @Get('payroll-summary')
   async getPayrollSummary(
@@ -134,11 +135,12 @@ export class AnalyticsController {
     @Req() req: RequestWithUser,
   ): Promise<PayrollSummaryResponse> {
     const userIds = await this.teamScopeService.getUserIdsInScope(req.user);
+    const isFullAdmin = this.teamScopeService.isFullAdmin(req.user);
     return this.analyticsService.getPayrollSummary(
       req.user.companyId,
       query.startDate,
       query.endDate,
-      { userIds },
+      { userIds, isFullAdmin },
     );
   }
 }

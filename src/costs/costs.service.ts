@@ -86,7 +86,7 @@ export interface FullMonthlyCostsResponse {
       items: CostActualResponse[];
     };
   };
-  internalCosts: number;
+  internalCosts: number | null; // null for team leaders (only visible to admin/owner)
   netResult: {
     estimated: number | null;
     actual: number | null;
@@ -104,7 +104,7 @@ export interface MonthCosts {
     estimated: number;
     actual: number;
   };
-  internalCosts: number;
+  internalCosts: number | null; // null for team leaders (only visible to admin/owner)
   netResult: {
     estimated: number | null;
     actual: number | null;
@@ -482,8 +482,10 @@ export class CostsService {
   ): Promise<FullMonthlyCostsResponse> {
     await this.verifyProjectAccess(projectId, companyId, user);
 
+    const isFullAdmin = this.teamScopeService.isFullAdmin(user);
+
     // Fetch all data in parallel
-    const [revenue, costEstimates, costActuals, internalCosts] =
+    const [revenue, costEstimates, costActuals, internalCostsRaw] =
       await Promise.all([
         this.prisma.projectMonthlyRevenue.findUnique({
           where: { projectId_year_month: { projectId, year, month } },
@@ -498,6 +500,9 @@ export class CostsService {
         }),
         this.calculateInternalCosts(projectId, companyId, year, month),
       ]);
+
+    // Hide internal costs for team leaders (only show to admin/owner)
+    const internalCosts = isFullAdmin ? internalCostsRaw : null;
 
     // Calculate totals
     const estimatedCostsTotal = costEstimates.reduce(
@@ -515,6 +520,9 @@ export class CostsService {
     const actualRevenue = revenue?.actualRevenue
       ? Number(revenue.actualRevenue)
       : null;
+
+    // For netResult, only include internal costs if visible (admin/owner)
+    const internalCostsForCalc = internalCosts ?? 0;
 
     return {
       projectId,
@@ -539,11 +547,11 @@ export class CostsService {
       netResult: {
         estimated:
           estimatedRevenue !== null
-            ? estimatedRevenue - estimatedCostsTotal - internalCosts
+            ? estimatedRevenue - estimatedCostsTotal - internalCostsForCalc
             : null,
         actual:
           actualRevenue !== null
-            ? actualRevenue - actualCostsTotal - internalCosts
+            ? actualRevenue - actualCostsTotal - internalCostsForCalc
             : null,
       },
     };
@@ -597,7 +605,7 @@ export class CostsService {
   /**
    * Get costs data for all projects the user has access to.
    * - Admin/Owner: All company projects
-   * - Team Leader: Only their team's projects
+   * - Team Leader: Only their team's projects (internalCosts hidden)
    */
   async getAllProjectsCosts(
     companyId: string,
@@ -606,7 +614,8 @@ export class CostsService {
     month?: number,
   ): Promise<AllProjectsCostsResponse> {
     // Get accessible projects based on user role
-    const teamId = this.teamScopeService.isFullAdmin(user) ? null : user.teamId;
+    const isFullAdmin = this.teamScopeService.isFullAdmin(user);
+    const teamId = isFullAdmin ? null : user.teamId;
 
     const projects = await this.prisma.project.findMany({
       where: {
@@ -636,6 +645,7 @@ export class CostsService {
           companyId,
           year,
           monthsToFetch,
+          isFullAdmin,
         );
 
         return {
@@ -654,12 +664,14 @@ export class CostsService {
 
   /**
    * Get costs data for specific months of a project.
+   * Internal costs are hidden (set to 0) for team leaders.
    */
   private async getProjectMonthsCosts(
     projectId: string,
     companyId: string,
     year: number,
     months: number[],
+    isFullAdmin: boolean = true,
   ): Promise<MonthCosts[]> {
     // Fetch all revenues for the year
     const revenues = await this.prisma.projectMonthlyRevenue.findMany({
@@ -712,7 +724,11 @@ export class CostsService {
 
       const estimatedCosts = estimatesByMonth.get(month) ?? 0;
       const actualCosts = actualsByMonth.get(month) ?? 0;
-      const internalCosts = internalCostsByMonth.get(month) ?? 0;
+      // Hide internal costs for team leaders (only show to admin/owner)
+      const internalCostsRaw = internalCostsByMonth.get(month) ?? 0;
+      const internalCosts = isFullAdmin ? internalCostsRaw : null;
+      // For netResult, only include internal costs if visible (admin/owner)
+      const internalCostsForCalc = internalCosts ?? 0;
 
       return {
         month,
@@ -728,11 +744,11 @@ export class CostsService {
         netResult: {
           estimated:
             estimatedRevenue !== null
-              ? estimatedRevenue - estimatedCosts - internalCosts
+              ? estimatedRevenue - estimatedCosts - internalCostsForCalc
               : null,
           actual:
             actualRevenue !== null
-              ? actualRevenue - actualCosts - internalCosts
+              ? actualRevenue - actualCosts - internalCostsForCalc
               : null,
         },
       };

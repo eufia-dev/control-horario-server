@@ -13,7 +13,7 @@ export interface PayrollUserSummary {
   name: string;
   email: string;
   team: { id: string; name: string } | null;
-  hourlyCost: number;
+  hourlyCost?: number; // Only included for admin/owner
   expectedMinutes: number;
   loggedMinutes: number;
   differenceMinutes: number;
@@ -24,7 +24,7 @@ export interface PayrollUserSummary {
   sickLeaveDays: number;
   otherAbsenceDays: number;
   coffeePauseMinutes: number;
-  totalCost: number;
+  totalCost?: number; // Only included for admin/owner
 }
 
 export interface PayrollSummaryTotals {
@@ -35,7 +35,7 @@ export interface PayrollSummaryTotals {
   sickLeaveDays: number;
   otherAbsenceDays: number;
   coffeePauseMinutes: number;
-  totalCost: number;
+  totalCost?: number; // Only included for admin/owner
 }
 
 export interface PayrollSummaryResponse {
