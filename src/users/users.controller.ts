@@ -34,14 +34,19 @@ export class UsersController {
 
   @Get()
   async findAll(@Req() req: RequestWithUser): Promise<UserResponse[]> {
+    const isFullAdmin = this.teamScopeService.isFullAdmin(req.user);
     // Team leaders can see ALL users (to be able to add them to their team)
     // but can only edit users in their own team (enforced in PATCH/DELETE)
+    // Salary/hourlyCost fields are hidden for team leaders
     if (this.teamScopeService.isTeamLeaderOrAbove(req.user)) {
-      return this.usersService.findAll(req.user.companyId);
+      return this.usersService.findAll(req.user.companyId, { isFullAdmin });
     }
     // Workers can only see themselves
     const userIds = await this.teamScopeService.getUserIdsInScope(req.user);
-    return this.usersService.findAll(req.user.companyId, { userIds });
+    return this.usersService.findAll(req.user.companyId, {
+      userIds,
+      isFullAdmin,
+    });
   }
 
   @Get(':id')
@@ -50,7 +55,8 @@ export class UsersController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: RequestWithUser,
   ): Promise<UserResponse> {
-    return this.usersService.findOne(id, req.user.companyId);
+    const isFullAdmin = this.teamScopeService.isFullAdmin(req.user);
+    return this.usersService.findOne(id, req.user.companyId, isFullAdmin);
   }
 
   @Patch(':id')

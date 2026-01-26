@@ -38,6 +38,11 @@ model Company {
   userAbsences      UserAbsence[]
   teams             Team[]
 
+  // Month closing relations
+  monthlyClosings     MonthlyClosing[]
+  monthlyUserSalaries MonthlyUserSalary[]
+  monthlyOverheadCosts MonthlyOverheadCost[]
+
   @@map("companies")
 }
 
@@ -82,6 +87,11 @@ model User {
   auditLogs        AuditLog[]    @relation("Actor")
   absences         UserAbsence[] @relation("UserAbsences")
   reviewedAbsences UserAbsence[] @relation("AbsenceReviewer")
+
+  // Month closing relations
+  monthlySalaries       MonthlyUserSalary[]
+  closedMonths          MonthlyClosing[]    @relation("ClosedByUser")
+  reopenedMonths        MonthlyClosing[]    @relation("ReopenedByUser")
 
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime? @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -186,11 +196,12 @@ model Project {
   category ProjectCategory? @relation(fields: [categoryId], references: [id])
   team     Team?            @relation(fields: [teamId], references: [id])
 
-  timeEntries          TimeEntry[]
-  activeTimers         ActiveTimer[]
-  monthlyRevenues      ProjectMonthlyRevenue[]
+  timeEntries           TimeEntry[]
+  activeTimers          ActiveTimer[]
+  monthlyRevenues       ProjectMonthlyRevenue[]
   externalCostEstimates ProjectExternalCostEstimate[]
-  externalCostActuals  ProjectExternalCostActual[]
+  externalCostActuals   ProjectExternalCostActual[]
+  monthlyDistributions  ProjectMonthlyDistribution[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -298,6 +309,132 @@ enum ExternalCostExpenseType {
   OTHER_PROFESSIONALS
   STRUCTURE_COSTS
   OTHER
+}
+
+// ---------------------------------------------------------
+// 4.2 MONTH CLOSING TABLES
+// ---------------------------------------------------------
+model MonthlyClosing {
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String @map("company_id") @db.Uuid
+
+  year  Int
+  month Int // 1-12
+
+  status MonthClosingStatus @default(OPEN)
+
+  // Totals at time of closing (for audit purposes)
+  totalSalaries Decimal? @map("total_salaries") @db.Decimal(12, 2)
+  totalOverhead Decimal? @map("total_overhead") @db.Decimal(12, 2)
+  totalRevenue  Decimal? @map("total_revenue") @db.Decimal(12, 2)
+
+  // Closing audit
+  closedById String?   @map("closed_by_id") @db.Uuid
+  closedAt   DateTime? @map("closed_at") @db.Timestamptz(6)
+
+  // Reopen audit
+  reopenedById String?   @map("reopened_by_id") @db.Uuid
+  reopenedAt   DateTime? @map("reopened_at") @db.Timestamptz(6)
+  reopenReason String?   @map("reopen_reason") @db.VarChar(500)
+
+  company      Company                      @relation(fields: [companyId], references: [id])
+  closedBy     User?                        @relation("ClosedByUser", fields: [closedById], references: [id])
+  reopenedBy   User?                        @relation("ReopenedByUser", fields: [reopenedById], references: [id])
+  distributions ProjectMonthlyDistribution[]
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime? @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([companyId, year, month])
+  @@map("monthly_closings")
+}
+
+enum MonthClosingStatus {
+  OPEN
+  CLOSED
+  REOPENED
+}
+
+model MonthlyUserSalary {
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String @map("company_id") @db.Uuid
+  userId    String @map("user_id") @db.Uuid
+
+  year  Int
+  month Int // 1-12
+
+  // Snapshot of base salary at time of closing (null while month is open)
+  baseSalarySnapshot Decimal? @map("base_salary_snapshot") @db.Decimal(10, 2)
+
+  // Extra compensation for this month (bonuses, commissions, etc.)
+  extras            Decimal @default(0) @db.Decimal(10, 2)
+  extrasDescription String? @map("extras_description") @db.VarChar(500)
+
+  notes String?
+
+  company Company @relation(fields: [companyId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime? @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([companyId, userId, year, month])
+  @@map("monthly_user_salaries")
+}
+
+model MonthlyOverheadCost {
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String @map("company_id") @db.Uuid
+
+  year  Int
+  month Int // 1-12
+
+  amount      Decimal          @db.Decimal(12, 2)
+  costType    OverheadCostType @map("cost_type")
+  description String?          @db.VarChar(500)
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime? @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("monthly_overhead_costs")
+}
+
+enum OverheadCostType {
+  RENT
+  UTILITIES
+  INSURANCE
+  SOFTWARE_LICENSES
+  MARKETING
+  OFFICE_SUPPLIES
+  PROFESSIONAL_SERVICES
+  TAXES_FEES
+  DEPRECIATION
+  OTHER
+}
+
+model ProjectMonthlyDistribution {
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  closingId String @map("closing_id") @db.Uuid
+  projectId String @map("project_id") @db.Uuid
+
+  // Revenue data at time of distribution
+  projectRevenue      Decimal @map("project_revenue") @db.Decimal(12, 2)
+  revenueSharePercent Decimal @map("revenue_share_percent") @db.Decimal(5, 2) // e.g., 25.50%
+
+  // Distributed amounts
+  distributedSalaries Decimal @map("distributed_salaries") @db.Decimal(12, 2)
+  distributedOverhead Decimal @map("distributed_overhead") @db.Decimal(12, 2)
+  totalDistributed    Decimal @map("total_distributed") @db.Decimal(12, 2)
+
+  closing MonthlyClosing @relation(fields: [closingId], references: [id], onDelete: Cascade)
+  project Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([closingId, projectId])
+  @@map("project_monthly_distributions")
 }
 
 // ---------------------------------------------------------

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -12,12 +13,22 @@ import type { UpdateCostEstimateDto } from './dto/update-cost-estimate.dto.js';
 import type { CreateCostActualDto } from './dto/create-cost-actual.dto.js';
 import type { UpdateCostActualDto } from './dto/update-cost-actual.dto.js';
 import type { SaveAnnualCostsDto } from './dto/save-annual-costs.dto.js';
+import type { UpsertMonthlySalaryDto } from './dto/monthly-salary.dto.js';
+import type {
+  CreateOverheadCostDto,
+  UpdateOverheadCostDto,
+} from './dto/monthly-overhead.dto.js';
+import { OverheadCostTypeLabels } from './dto/monthly-overhead.dto.js';
+import { OverheadCostType } from './dto/monthly-overhead.dto.js';
+import { MonthClosingStatus } from './dto/month-closing.dto.js';
+import type { ReopenMonthDto } from './dto/month-closing.dto.js';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface.js';
 import type {
   ProjectMonthlyRevenue,
   ProjectExternalCostEstimate,
   ProjectExternalCostActual,
   ExternalCostExpenseType,
+  OverheadCostType as PrismaOverheadCostType,
 } from '@prisma/client';
 
 // Response interfaces
@@ -87,6 +98,8 @@ export interface FullMonthlyCostsResponse {
     };
   };
   internalCosts: number | null; // null for team leaders (only visible to admin/owner)
+  distributedCosts: number | null; // From month closing distribution (null if month not closed)
+  isMonthClosed: boolean;
   netResult: {
     estimated: number | null;
     actual: number | null;
@@ -105,6 +118,8 @@ export interface MonthCosts {
     actual: number;
   };
   internalCosts: number | null; // null for team leaders (only visible to admin/owner)
+  distributedCosts: number | null; // From month closing distribution (null if month not closed)
+  isMonthClosed: boolean;
   netResult: {
     estimated: number | null;
     actual: number | null;
@@ -134,6 +149,8 @@ export interface AnnualMonthCosts {
   estimatedCostsTotal: number;
   actualCosts: CostActualResponse[];
   actualCostsTotal: number;
+  distributedCosts: number | null; // From month closing distribution (null if month not closed)
+  isMonthClosed: boolean;
 }
 
 export interface AnnualProjectCosts {
@@ -148,6 +165,139 @@ export interface AnnualProjectCosts {
 export interface AnnualCostsResponse {
   year: number;
   projects: AnnualProjectCosts[];
+}
+
+// ==================== MONTHLY SALARY RESPONSE INTERFACES ====================
+
+export interface UserMonthlySalary {
+  id: string | null; // MonthlyUserSalary record ID (null if no extras entered yet)
+  userId: string;
+  userName: string;
+  userEmail: string;
+  baseSalary: number | null; // From User.salary (null if user has no salary set)
+  extras: number; // From MonthlyUserSalary.extras (0 if no record)
+  extrasDescription: string | null;
+  totalSalary: number | null; // baseSalary + extras (null if baseSalary is null)
+  notes: string | null;
+}
+
+export interface MonthlySalariesResponse {
+  year: number;
+  month: number;
+  monthStatus: MonthClosingStatus;
+  users: UserMonthlySalary[];
+  totals: {
+    baseSalaries: number;
+    extras: number;
+    total: number;
+  };
+}
+
+export interface MonthlySalaryResponse {
+  id: string;
+  userId: string;
+  year: number;
+  month: number;
+  baseSalary: number; // Current User.salary after update
+  extras: number;
+  extrasDescription: string | null;
+  totalSalary: number;
+  notes: string | null;
+  warning?: string; // Present if month is CLOSED
+}
+
+// ==================== MONTHLY OVERHEAD RESPONSE INTERFACES ====================
+
+export interface OverheadCostResponse {
+  id: string;
+  amount: number;
+  costType: string; // OverheadCostType enum value
+  description: string | null;
+  createdAt: Date;
+  updatedAt: Date | null;
+}
+
+export interface MonthlyOverheadResponse {
+  year: number;
+  month: number;
+  monthStatus: MonthClosingStatus;
+  costs: OverheadCostResponse[];
+  total: number;
+  warning?: string;
+}
+
+export interface OverheadCostTypeOption {
+  value: OverheadCostType;
+  label: string;
+}
+
+// ==================== MONTH CLOSING RESPONSE INTERFACES ====================
+
+export interface ProjectDistribution {
+  projectId: string;
+  projectName: string;
+  projectCode: string;
+  projectRevenue: number;
+  revenueSharePercent: number;
+  distributedSalaries: number;
+  distributedOverhead: number;
+  totalDistributed: number;
+}
+
+export interface MonthlyClosingResponse {
+  id: string | null; // null if month has never been closed
+  year: number;
+  month: number;
+  status: MonthClosingStatus;
+
+  // Totals (null if never closed)
+  totalSalaries: number | null;
+  totalOverhead: number | null;
+  totalRevenue: number | null;
+
+  // Audit info
+  closedBy: { id: string; name: string } | null;
+  closedAt: Date | null;
+  reopenedBy: { id: string; name: string } | null;
+  reopenedAt: Date | null;
+  reopenReason: string | null;
+
+  // Distributions (only present if status !== 'OPEN')
+  distributions: ProjectDistribution[] | null;
+}
+
+export interface ValidationError {
+  type:
+    | 'MISSING_SALARY'
+    | 'MISSING_REVENUE'
+    | 'NO_ACTIVE_PROJECTS'
+    | 'ZERO_REVENUE';
+  message: string;
+  details?: {
+    userId?: string;
+    userName?: string;
+    projectId?: string;
+    projectName?: string;
+  };
+}
+
+export interface DistributionPreviewResponse {
+  year: number;
+  month: number;
+  canClose: boolean;
+  validationErrors: ValidationError[];
+
+  // Preview data
+  totalSalaries: number;
+  totalOverhead: number;
+  totalRevenue: number;
+
+  distributions: ProjectDistribution[];
+}
+
+export interface CloseMonthResponse {
+  success: boolean;
+  closing: MonthlyClosingResponse;
 }
 
 @Injectable()
@@ -485,24 +635,32 @@ export class CostsService {
     const isFullAdmin = this.teamScopeService.isFullAdmin(user);
 
     // Fetch all data in parallel
-    const [revenue, costEstimates, costActuals, internalCostsRaw] =
-      await Promise.all([
-        this.prisma.projectMonthlyRevenue.findUnique({
-          where: { projectId_year_month: { projectId, year, month } },
-        }),
-        this.prisma.projectExternalCostEstimate.findMany({
-          where: { projectId, year, month },
-          include: { provider: true },
-        }),
-        this.prisma.projectExternalCostActual.findMany({
-          where: { projectId, year, month },
-          include: { provider: true },
-        }),
-        this.calculateInternalCosts(projectId, companyId, year, month),
-      ]);
+    const [
+      revenue,
+      costEstimates,
+      costActuals,
+      internalCostsRaw,
+      distribution,
+    ] = await Promise.all([
+      this.prisma.projectMonthlyRevenue.findUnique({
+        where: { projectId_year_month: { projectId, year, month } },
+      }),
+      this.prisma.projectExternalCostEstimate.findMany({
+        where: { projectId, year, month },
+        include: { provider: true },
+      }),
+      this.prisma.projectExternalCostActual.findMany({
+        where: { projectId, year, month },
+        include: { provider: true },
+      }),
+      this.calculateInternalCosts(projectId, companyId, year, month),
+      this.getProjectDistributedCosts(projectId, companyId, year, month),
+    ]);
 
     // Hide internal costs for team leaders (only show to admin/owner)
     const internalCosts = isFullAdmin ? internalCostsRaw : null;
+    const distributedCosts = distribution?.totalDistributed ?? null;
+    const isMonthClosed = distribution !== null;
 
     // Calculate totals
     const estimatedCostsTotal = costEstimates.reduce(
@@ -521,8 +679,9 @@ export class CostsService {
       ? Number(revenue.actualRevenue)
       : null;
 
-    // For netResult, only include internal costs if visible (admin/owner)
+    // For netResult, include internal costs + distributed costs
     const internalCostsForCalc = internalCosts ?? 0;
+    const distributedCostsForCalc = distributedCosts ?? 0;
 
     return {
       projectId,
@@ -544,6 +703,8 @@ export class CostsService {
         },
       },
       internalCosts,
+      distributedCosts,
+      isMonthClosed,
       netResult: {
         estimated:
           estimatedRevenue !== null
@@ -551,10 +712,47 @@ export class CostsService {
             : null,
         actual:
           actualRevenue !== null
-            ? actualRevenue - actualCostsTotal - internalCostsForCalc
+            ? actualRevenue -
+              actualCostsTotal -
+              internalCostsForCalc -
+              distributedCostsForCalc
             : null,
       },
     };
+  }
+
+  /**
+   * Get distributed costs for a project from month closing distribution.
+   * Returns null if month is not closed.
+   */
+  private async getProjectDistributedCosts(
+    projectId: string,
+    companyId: string,
+    year: number,
+    month: number,
+  ): Promise<{ totalDistributed: number } | null> {
+    // First check if month is closed
+    const closing = await this.prisma.monthlyClosing.findUnique({
+      where: { companyId_year_month: { companyId, year, month } },
+    });
+
+    if (!closing || closing.status === 'OPEN') {
+      return null;
+    }
+
+    // Get distribution for this project
+    const distribution = await this.prisma.projectMonthlyDistribution.findFirst(
+      {
+        where: { closingId: closing.id, projectId },
+        select: { totalDistributed: true },
+      },
+    );
+
+    if (!distribution) {
+      return null;
+    }
+
+    return { totalDistributed: Number(distribution.totalDistributed) };
   }
 
   /**
@@ -712,6 +910,15 @@ export class CostsService {
       months.map((month, index) => [month, internalCostsResults[index]]),
     );
 
+    // Get distributed costs for each month
+    const distributedCostsPromises = months.map((month) =>
+      this.getProjectDistributedCosts(projectId, companyId, year, month),
+    );
+    const distributedCostsResults = await Promise.all(distributedCostsPromises);
+    const distributedCostsByMonth = new Map(
+      months.map((month, index) => [month, distributedCostsResults[index]]),
+    );
+
     // Build response for each month
     return months.map((month) => {
       const revenue = revenueByMonth.get(month);
@@ -727,8 +934,15 @@ export class CostsService {
       // Hide internal costs for team leaders (only show to admin/owner)
       const internalCostsRaw = internalCostsByMonth.get(month) ?? 0;
       const internalCosts = isFullAdmin ? internalCostsRaw : null;
-      // For netResult, only include internal costs if visible (admin/owner)
+
+      // Get distributed costs
+      const distributedData = distributedCostsByMonth.get(month);
+      const distributedCosts = distributedData?.totalDistributed ?? null;
+      const isMonthClosed = distributedData !== null;
+
+      // For netResult, include internal costs + distributed costs
       const internalCostsForCalc = internalCosts ?? 0;
+      const distributedCostsForCalc = distributedCosts ?? 0;
 
       return {
         month,
@@ -741,6 +955,8 @@ export class CostsService {
           actual: actualCosts,
         },
         internalCosts,
+        distributedCosts,
+        isMonthClosed,
         netResult: {
           estimated:
             estimatedRevenue !== null
@@ -748,7 +964,10 @@ export class CostsService {
               : null,
           actual:
             actualRevenue !== null
-              ? actualRevenue - actualCosts - internalCostsForCalc
+              ? actualRevenue -
+                actualCosts -
+                internalCostsForCalc -
+                distributedCostsForCalc
               : null,
         },
       };
@@ -792,20 +1011,33 @@ export class CostsService {
 
     const projectIds = projects.map((p) => p.id);
 
-    // Batch fetch all data for the year in 3 parallel queries
-    const [revenues, estimates, actuals] = await Promise.all([
-      this.prisma.projectMonthlyRevenue.findMany({
-        where: { projectId: { in: projectIds }, year },
-      }),
-      this.prisma.projectExternalCostEstimate.findMany({
-        where: { projectId: { in: projectIds }, year },
-        include: { provider: true },
-      }),
-      this.prisma.projectExternalCostActual.findMany({
-        where: { projectId: { in: projectIds }, year },
-        include: { provider: true },
-      }),
-    ]);
+    // Batch fetch all data for the year in parallel queries
+    const [revenues, estimates, actuals, closings, distributions] =
+      await Promise.all([
+        this.prisma.projectMonthlyRevenue.findMany({
+          where: { projectId: { in: projectIds }, year },
+        }),
+        this.prisma.projectExternalCostEstimate.findMany({
+          where: { projectId: { in: projectIds }, year },
+          include: { provider: true },
+        }),
+        this.prisma.projectExternalCostActual.findMany({
+          where: { projectId: { in: projectIds }, year },
+          include: { provider: true },
+        }),
+        // Get month closings for the year
+        this.prisma.monthlyClosing.findMany({
+          where: { companyId, year },
+        }),
+        // Get distributions for the year
+        this.prisma.projectMonthlyDistribution.findMany({
+          where: {
+            projectId: { in: projectIds },
+            closing: { companyId, year },
+          },
+          include: { closing: { select: { month: true, status: true } } },
+        }),
+      ]);
 
     // Group data by projectId + month
     const revenueMap = new Map<string, ProjectMonthlyRevenue>();
@@ -831,6 +1063,20 @@ export class CostsService {
       actualsMap.set(key, list);
     }
 
+    // Group closings by month
+    const closingByMonth = new Map(
+      closings.map((c) => [c.month, c.status !== 'OPEN']),
+    );
+
+    // Group distributions by projectId + month
+    const distributionMap = new Map<string, number>();
+    for (const d of distributions) {
+      if (d.closing.status !== 'OPEN') {
+        const key = `${d.projectId}-${d.closing.month}`;
+        distributionMap.set(key, Number(d.totalDistributed));
+      }
+    }
+
     // Build response for all projects
     const projectCosts: AnnualProjectCosts[] = projects.map((project) => {
       const months: AnnualMonthCosts[] = [];
@@ -840,6 +1086,8 @@ export class CostsService {
         const revenue = revenueMap.get(key);
         const monthEstimates = estimatesMap.get(key) ?? [];
         const monthActuals = actualsMap.get(key) ?? [];
+        const isMonthClosed = closingByMonth.get(month) ?? false;
+        const distributedCosts = distributionMap.get(key) ?? null;
 
         const estimatedCostsTotal = monthEstimates.reduce(
           (sum, e) => sum + Number(e.amount),
@@ -865,6 +1113,8 @@ export class CostsService {
           estimatedCostsTotal,
           actualCosts: monthActuals.map((a) => this.toCostActualResponse(a)),
           actualCostsTotal,
+          distributedCosts,
+          isMonthClosed,
         });
       }
 
@@ -1005,6 +1255,833 @@ export class CostsService {
         }
       }
     });
+  }
+
+  // ==================== MONTHLY SALARIES ====================
+
+  /**
+   * Get all active users with their salary data for a specific month.
+   * Returns live baseSalary from User.salary for OPEN months,
+   * or snapshotted baseSalary for CLOSED months.
+   */
+  async getMonthlySalaries(
+    companyId: string,
+    year: number,
+    month: number,
+  ): Promise<MonthlySalariesResponse> {
+    // Get month closing status
+    const closing = await this.prisma.monthlyClosing.findUnique({
+      where: { companyId_year_month: { companyId, year, month } },
+    });
+    const monthStatus =
+      (closing?.status as MonthClosingStatus) ?? MonthClosingStatus.OPEN;
+
+    // Get all active users in the company
+    const users = await this.prisma.user.findMany({
+      where: {
+        companyId,
+        isActive: true,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        salary: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    // Get monthly salary records for this month
+    const salaryRecords = await this.prisma.monthlyUserSalary.findMany({
+      where: { companyId, year, month },
+    });
+    const salaryByUser = new Map(salaryRecords.map((s) => [s.userId, s]));
+
+    // Build response
+    let totalBaseSalaries = 0;
+    let totalExtras = 0;
+
+    const userSalaries: UserMonthlySalary[] = users.map((user) => {
+      const record = salaryByUser.get(user.id);
+
+      // For CLOSED months, use snapshot; otherwise use live User.salary
+      let baseSalary: number | null;
+      if (
+        monthStatus === MonthClosingStatus.CLOSED &&
+        record?.baseSalarySnapshot
+      ) {
+        baseSalary = Number(record.baseSalarySnapshot);
+      } else {
+        baseSalary = user.salary ? Number(user.salary) : null;
+      }
+
+      const extras = record ? Number(record.extras) : 0;
+      const totalSalary = baseSalary !== null ? baseSalary + extras : null;
+
+      if (baseSalary !== null) {
+        totalBaseSalaries += baseSalary;
+      }
+      totalExtras += extras;
+
+      return {
+        id: record?.id ?? null,
+        userId: user.id,
+        userName: user.name,
+        userEmail: user.email,
+        baseSalary,
+        extras,
+        extrasDescription: record?.extrasDescription ?? null,
+        totalSalary,
+        notes: record?.notes ?? null,
+      };
+    });
+
+    return {
+      year,
+      month,
+      monthStatus,
+      users: userSalaries,
+      totals: {
+        baseSalaries: totalBaseSalaries,
+        extras: totalExtras,
+        total: totalBaseSalaries + totalExtras,
+      },
+    };
+  }
+
+  /**
+   * Create or update a user's monthly salary entry.
+   * If baseSalary is provided and different from current, updates User.salary and hourlyCost.
+   */
+  async upsertMonthlySalary(
+    companyId: string,
+    user: JwtPayload,
+    dto: UpsertMonthlySalaryDto,
+  ): Promise<MonthlySalaryResponse> {
+    // Verify user exists in company
+    const targetUser = await this.prisma.user.findFirst({
+      where: { id: dto.userId, companyId, deletedAt: null },
+    });
+
+    if (!targetUser) {
+      throw new NotFoundException(`Usuario con ID ${dto.userId} no encontrado`);
+    }
+
+    // Check if month is closed
+    const closing = await this.prisma.monthlyClosing.findUnique({
+      where: {
+        companyId_year_month: { companyId, year: dto.year, month: dto.month },
+      },
+    });
+    const monthStatus =
+      (closing?.status as MonthClosingStatus) ?? MonthClosingStatus.OPEN;
+    let warning: string | undefined;
+
+    // If month is closed, mark as reopened and add warning
+    if (monthStatus === MonthClosingStatus.CLOSED) {
+      await this.prisma.monthlyClosing.update({
+        where: { id: closing!.id },
+        data: {
+          status: 'REOPENED',
+          reopenedById: user.sub,
+          reopenedAt: new Date(),
+          reopenReason: 'Modificación de salario mensual',
+        },
+      });
+      warning =
+        'Este mes está cerrado. Los cambios recalcularán la distribución.';
+    }
+
+    // Update User.salary and hourlyCost if baseSalary provided and different
+    let currentBaseSalary = targetUser.salary
+      ? Number(targetUser.salary)
+      : null;
+    if (dto.baseSalary !== undefined && dto.baseSalary !== currentBaseSalary) {
+      // Calculate new hourly cost (assuming 160 work hours/month)
+      const newHourlyCost = dto.baseSalary / 160;
+
+      await this.prisma.user.update({
+        where: { id: dto.userId },
+        data: {
+          salary: dto.baseSalary,
+          hourlyCost: Math.round(newHourlyCost * 100) / 100,
+        },
+      });
+      currentBaseSalary = dto.baseSalary;
+    }
+
+    // Upsert the monthly salary record
+    const record = await this.prisma.monthlyUserSalary.upsert({
+      where: {
+        companyId_userId_year_month: {
+          companyId,
+          userId: dto.userId,
+          year: dto.year,
+          month: dto.month,
+        },
+      },
+      update: {
+        extras: dto.extras ?? 0,
+        extrasDescription: dto.extrasDescription,
+        notes: dto.notes,
+      },
+      create: {
+        companyId,
+        userId: dto.userId,
+        year: dto.year,
+        month: dto.month,
+        extras: dto.extras ?? 0,
+        extrasDescription: dto.extrasDescription,
+        notes: dto.notes,
+      },
+    });
+
+    const baseSalary = currentBaseSalary ?? 0;
+    const extras = Number(record.extras);
+
+    return {
+      id: record.id,
+      userId: dto.userId,
+      year: dto.year,
+      month: dto.month,
+      baseSalary,
+      extras,
+      extrasDescription: record.extrasDescription,
+      totalSalary: baseSalary + extras,
+      notes: record.notes,
+      warning,
+    };
+  }
+
+  /**
+   * Delete a monthly salary extras entry.
+   * Only deletes the MonthlyUserSalary record (extras), does NOT affect User.salary.
+   */
+  async deleteMonthlySalary(
+    id: string,
+    companyId: string,
+    user: JwtPayload,
+  ): Promise<void> {
+    const record = await this.prisma.monthlyUserSalary.findUnique({
+      where: { id },
+    });
+
+    if (!record || record.companyId !== companyId) {
+      throw new NotFoundException(
+        `Registro de salario con ID ${id} no encontrado`,
+      );
+    }
+
+    // Check if month is closed
+    const closing = await this.prisma.monthlyClosing.findUnique({
+      where: {
+        companyId_year_month: {
+          companyId,
+          year: record.year,
+          month: record.month,
+        },
+      },
+    });
+
+    if (closing?.status === 'CLOSED') {
+      await this.prisma.monthlyClosing.update({
+        where: { id: closing.id },
+        data: {
+          status: 'REOPENED',
+          reopenedById: user.sub,
+          reopenedAt: new Date(),
+          reopenReason: 'Eliminación de registro de salario mensual',
+        },
+      });
+    }
+
+    await this.prisma.monthlyUserSalary.delete({ where: { id } });
+  }
+
+  // ==================== MONTHLY OVERHEAD COSTS ====================
+
+  /**
+   * Get all overhead costs for a specific month.
+   */
+  async getMonthlyOverhead(
+    companyId: string,
+    year: number,
+    month: number,
+  ): Promise<MonthlyOverheadResponse> {
+    // Get month closing status
+    const closing = await this.prisma.monthlyClosing.findUnique({
+      where: { companyId_year_month: { companyId, year, month } },
+    });
+    const monthStatus =
+      (closing?.status as MonthClosingStatus) ?? MonthClosingStatus.OPEN;
+
+    // Get overhead costs
+    const costs = await this.prisma.monthlyOverheadCost.findMany({
+      where: { companyId, year, month },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const total = costs.reduce((sum, c) => sum + Number(c.amount), 0);
+
+    return {
+      year,
+      month,
+      monthStatus,
+      costs: costs.map((c) => ({
+        id: c.id,
+        amount: Number(c.amount),
+        costType: c.costType,
+        description: c.description,
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt,
+      })),
+      total,
+    };
+  }
+
+  /**
+   * Get overhead cost type options for dropdown.
+   */
+  getOverheadCostTypes(): OverheadCostTypeOption[] {
+    return Object.values(OverheadCostType).map((value) => ({
+      value,
+      label: OverheadCostTypeLabels[value],
+    }));
+  }
+
+  /**
+   * Create a new overhead cost entry.
+   */
+  async createOverheadCost(
+    companyId: string,
+    user: JwtPayload,
+    dto: CreateOverheadCostDto,
+  ): Promise<OverheadCostResponse & { warning?: string }> {
+    // Check if month is closed
+    const closing = await this.prisma.monthlyClosing.findUnique({
+      where: {
+        companyId_year_month: { companyId, year: dto.year, month: dto.month },
+      },
+    });
+    let warning: string | undefined;
+
+    if (closing?.status === 'CLOSED') {
+      await this.prisma.monthlyClosing.update({
+        where: { id: closing.id },
+        data: {
+          status: 'REOPENED',
+          reopenedById: user.sub,
+          reopenedAt: new Date(),
+          reopenReason: 'Creación de gasto general',
+        },
+      });
+      warning =
+        'Este mes está cerrado. Los cambios recalcularán la distribución.';
+    }
+
+    const cost = await this.prisma.monthlyOverheadCost.create({
+      data: {
+        companyId,
+        year: dto.year,
+        month: dto.month,
+        amount: dto.amount,
+        costType: dto.costType,
+        description: dto.description,
+      },
+    });
+
+    return {
+      id: cost.id,
+      amount: Number(cost.amount),
+      costType: cost.costType,
+      description: cost.description,
+      createdAt: cost.createdAt,
+      updatedAt: cost.updatedAt,
+      warning,
+    };
+  }
+
+  /**
+   * Update an existing overhead cost.
+   */
+  async updateOverheadCost(
+    id: string,
+    companyId: string,
+    user: JwtPayload,
+    dto: UpdateOverheadCostDto,
+  ): Promise<OverheadCostResponse & { warning?: string }> {
+    const existing = await this.prisma.monthlyOverheadCost.findUnique({
+      where: { id },
+    });
+
+    if (!existing || existing.companyId !== companyId) {
+      throw new NotFoundException(`Gasto general con ID ${id} no encontrado`);
+    }
+
+    // Check if month is closed
+    const closing = await this.prisma.monthlyClosing.findUnique({
+      where: {
+        companyId_year_month: {
+          companyId,
+          year: existing.year,
+          month: existing.month,
+        },
+      },
+    });
+    let warning: string | undefined;
+
+    if (closing?.status === 'CLOSED') {
+      await this.prisma.monthlyClosing.update({
+        where: { id: closing.id },
+        data: {
+          status: 'REOPENED',
+          reopenedById: user.sub,
+          reopenedAt: new Date(),
+          reopenReason: 'Modificación de gasto general',
+        },
+      });
+      warning =
+        'Este mes está cerrado. Los cambios recalcularán la distribución.';
+    }
+
+    const cost = await this.prisma.monthlyOverheadCost.update({
+      where: { id },
+      data: {
+        amount: dto.amount,
+        costType: dto.costType,
+        description: dto.description,
+      },
+    });
+
+    return {
+      id: cost.id,
+      amount: Number(cost.amount),
+      costType: cost.costType,
+      description: cost.description,
+      createdAt: cost.createdAt,
+      updatedAt: cost.updatedAt,
+      warning,
+    };
+  }
+
+  /**
+   * Delete an overhead cost entry.
+   */
+  async deleteOverheadCost(
+    id: string,
+    companyId: string,
+    user: JwtPayload,
+  ): Promise<void> {
+    const existing = await this.prisma.monthlyOverheadCost.findUnique({
+      where: { id },
+    });
+
+    if (!existing || existing.companyId !== companyId) {
+      throw new NotFoundException(`Gasto general con ID ${id} no encontrado`);
+    }
+
+    // Check if month is closed
+    const closing = await this.prisma.monthlyClosing.findUnique({
+      where: {
+        companyId_year_month: {
+          companyId,
+          year: existing.year,
+          month: existing.month,
+        },
+      },
+    });
+
+    if (closing?.status === 'CLOSED') {
+      await this.prisma.monthlyClosing.update({
+        where: { id: closing.id },
+        data: {
+          status: 'REOPENED',
+          reopenedById: user.sub,
+          reopenedAt: new Date(),
+          reopenReason: 'Eliminación de gasto general',
+        },
+      });
+    }
+
+    await this.prisma.monthlyOverheadCost.delete({ where: { id } });
+  }
+
+  // ==================== MONTH CLOSING ====================
+
+  /**
+   * Get the closing status and distribution data for a month.
+   */
+  async getMonthlyClosing(
+    companyId: string,
+    year: number,
+    month: number,
+  ): Promise<MonthlyClosingResponse> {
+    const closing = await this.prisma.monthlyClosing.findUnique({
+      where: { companyId_year_month: { companyId, year, month } },
+      include: {
+        closedBy: { select: { id: true, name: true } },
+        reopenedBy: { select: { id: true, name: true } },
+        distributions: {
+          include: {
+            project: { select: { id: true, name: true, code: true } },
+          },
+        },
+      },
+    });
+
+    if (!closing) {
+      return {
+        id: null,
+        year,
+        month,
+        status: MonthClosingStatus.OPEN,
+        totalSalaries: null,
+        totalOverhead: null,
+        totalRevenue: null,
+        closedBy: null,
+        closedAt: null,
+        reopenedBy: null,
+        reopenedAt: null,
+        reopenReason: null,
+        distributions: null,
+      };
+    }
+
+    return {
+      id: closing.id,
+      year,
+      month,
+      status: closing.status as MonthClosingStatus,
+      totalSalaries: closing.totalSalaries
+        ? Number(closing.totalSalaries)
+        : null,
+      totalOverhead: closing.totalOverhead
+        ? Number(closing.totalOverhead)
+        : null,
+      totalRevenue: closing.totalRevenue ? Number(closing.totalRevenue) : null,
+      closedBy: closing.closedBy,
+      closedAt: closing.closedAt,
+      reopenedBy: closing.reopenedBy,
+      reopenedAt: closing.reopenedAt,
+      reopenReason: closing.reopenReason,
+      distributions:
+        closing.status !== 'OPEN'
+          ? closing.distributions.map((d) => ({
+              projectId: d.projectId,
+              projectName: d.project.name,
+              projectCode: d.project.code,
+              projectRevenue: Number(d.projectRevenue),
+              revenueSharePercent: Number(d.revenueSharePercent),
+              distributedSalaries: Number(d.distributedSalaries),
+              distributedOverhead: Number(d.distributedOverhead),
+              totalDistributed: Number(d.totalDistributed),
+            }))
+          : null,
+    };
+  }
+
+  /**
+   * Preview what the distribution would look like WITHOUT actually closing.
+   */
+  async previewDistribution(
+    companyId: string,
+    year: number,
+    month: number,
+  ): Promise<DistributionPreviewResponse> {
+    const validationErrors: ValidationError[] = [];
+
+    // Get active users and their salaries
+    const users = await this.prisma.user.findMany({
+      where: { companyId, isActive: true, deletedAt: null },
+      select: { id: true, name: true, salary: true },
+    });
+
+    // Get monthly salary extras
+    const salaryRecords = await this.prisma.monthlyUserSalary.findMany({
+      where: { companyId, year, month },
+    });
+    const salaryByUser = new Map(salaryRecords.map((s) => [s.userId, s]));
+
+    // Calculate total salaries and check for missing
+    let totalSalaries = 0;
+    for (const user of users) {
+      const record = salaryByUser.get(user.id);
+      const baseSalary = user.salary ? Number(user.salary) : null;
+      const extras = record ? Number(record.extras) : 0;
+
+      if (baseSalary === null) {
+        validationErrors.push({
+          type: 'MISSING_SALARY',
+          message: `El usuario ${user.name} no tiene salario base configurado`,
+          details: { userId: user.id, userName: user.name },
+        });
+      } else {
+        totalSalaries += baseSalary + extras;
+      }
+    }
+
+    // Get overhead costs
+    const overheadCosts = await this.prisma.monthlyOverheadCost.findMany({
+      where: { companyId, year, month },
+    });
+    const totalOverhead = overheadCosts.reduce(
+      (sum, c) => sum + Number(c.amount),
+      0,
+    );
+
+    // Get active projects with their revenue
+    const projects = await this.prisma.project.findMany({
+      where: { companyId, isActive: true },
+      select: { id: true, name: true, code: true },
+    });
+
+    if (projects.length === 0) {
+      validationErrors.push({
+        type: 'NO_ACTIVE_PROJECTS',
+        message: 'No hay proyectos activos para distribuir costes',
+      });
+    }
+
+    // Get revenues for active projects
+    const revenues = await this.prisma.projectMonthlyRevenue.findMany({
+      where: {
+        projectId: { in: projects.map((p) => p.id) },
+        year,
+        month,
+      },
+    });
+    const revenueByProject = new Map(revenues.map((r) => [r.projectId, r]));
+
+    // Check for missing revenues and calculate total
+    let totalRevenue = 0;
+    for (const project of projects) {
+      const revenue = revenueByProject.get(project.id);
+      if (!revenue || revenue.actualRevenue === null) {
+        validationErrors.push({
+          type: 'MISSING_REVENUE',
+          message: `El proyecto ${project.name} no tiene ingresos reales configurados`,
+          details: { projectId: project.id, projectName: project.name },
+        });
+      } else {
+        totalRevenue += Number(revenue.actualRevenue);
+      }
+    }
+
+    // Warn if total revenue is zero
+    if (
+      totalRevenue === 0 &&
+      projects.length > 0 &&
+      validationErrors.filter((e) => e.type === 'MISSING_REVENUE').length === 0
+    ) {
+      validationErrors.push({
+        type: 'ZERO_REVENUE',
+        message:
+          'El total de ingresos es cero. Los costes se distribuirán equitativamente.',
+      });
+    }
+
+    // Calculate distributions
+    const distributions: ProjectDistribution[] = projects.map((project) => {
+      const revenue = revenueByProject.get(project.id);
+      const projectRevenue = revenue?.actualRevenue
+        ? Number(revenue.actualRevenue)
+        : 0;
+
+      let revenueSharePercent: number;
+      if (totalRevenue === 0) {
+        // Distribute equally if no revenue
+        revenueSharePercent = 100 / projects.length;
+      } else {
+        revenueSharePercent = (projectRevenue / totalRevenue) * 100;
+      }
+
+      const distributedSalaries = (totalSalaries * revenueSharePercent) / 100;
+      const distributedOverhead = (totalOverhead * revenueSharePercent) / 100;
+
+      return {
+        projectId: project.id,
+        projectName: project.name,
+        projectCode: project.code,
+        projectRevenue,
+        revenueSharePercent: Math.round(revenueSharePercent * 100) / 100,
+        distributedSalaries: Math.round(distributedSalaries * 100) / 100,
+        distributedOverhead: Math.round(distributedOverhead * 100) / 100,
+        totalDistributed:
+          Math.round((distributedSalaries + distributedOverhead) * 100) / 100,
+      };
+    });
+
+    // Can close if no critical errors (MISSING_SALARY with no base salary, NO_ACTIVE_PROJECTS)
+    const criticalErrors = validationErrors.filter(
+      (e) => e.type === 'MISSING_SALARY' || e.type === 'NO_ACTIVE_PROJECTS',
+    );
+    const canClose = criticalErrors.length === 0;
+
+    return {
+      year,
+      month,
+      canClose,
+      validationErrors,
+      totalSalaries,
+      totalOverhead,
+      totalRevenue,
+      distributions,
+    };
+  }
+
+  /**
+   * Close the month. Creates distribution records and snapshots salary data.
+   */
+  async closeMonth(
+    companyId: string,
+    user: JwtPayload,
+    year: number,
+    month: number,
+  ): Promise<CloseMonthResponse> {
+    // Get preview to validate
+    const preview = await this.previewDistribution(companyId, year, month);
+
+    if (!preview.canClose) {
+      throw new BadRequestException({
+        message: 'No se puede cerrar el mes. Hay errores de validación.',
+        errors: preview.validationErrors,
+      });
+    }
+
+    // Check if already closed
+    const existingClosing = await this.prisma.monthlyClosing.findUnique({
+      where: { companyId_year_month: { companyId, year, month } },
+    });
+
+    if (existingClosing?.status === 'CLOSED') {
+      throw new BadRequestException('Este mes ya está cerrado');
+    }
+
+    // Execute closing in a transaction
+    await this.prisma.$transaction(async (tx) => {
+      // Snapshot base salaries for all active users
+      const users = await tx.user.findMany({
+        where: { companyId, isActive: true, deletedAt: null },
+        select: { id: true, salary: true },
+      });
+
+      for (const u of users) {
+        if (u.salary !== null) {
+          await tx.monthlyUserSalary.upsert({
+            where: {
+              companyId_userId_year_month: {
+                companyId,
+                userId: u.id,
+                year,
+                month,
+              },
+            },
+            update: {
+              baseSalarySnapshot: u.salary,
+            },
+            create: {
+              companyId,
+              userId: u.id,
+              year,
+              month,
+              baseSalarySnapshot: u.salary,
+              extras: 0,
+            },
+          });
+        }
+      }
+
+      // Create or update closing record
+      const closing = await tx.monthlyClosing.upsert({
+        where: { companyId_year_month: { companyId, year, month } },
+        update: {
+          status: 'CLOSED',
+          totalSalaries: preview.totalSalaries,
+          totalOverhead: preview.totalOverhead,
+          totalRevenue: preview.totalRevenue,
+          closedById: user.sub,
+          closedAt: new Date(),
+          reopenedById: null,
+          reopenedAt: null,
+          reopenReason: null,
+        },
+        create: {
+          companyId,
+          year,
+          month,
+          status: 'CLOSED',
+          totalSalaries: preview.totalSalaries,
+          totalOverhead: preview.totalOverhead,
+          totalRevenue: preview.totalRevenue,
+          closedById: user.sub,
+          closedAt: new Date(),
+        },
+      });
+
+      // Delete existing distributions if reopening
+      await tx.projectMonthlyDistribution.deleteMany({
+        where: { closingId: closing.id },
+      });
+
+      // Create distribution records
+      for (const dist of preview.distributions) {
+        await tx.projectMonthlyDistribution.create({
+          data: {
+            closingId: closing.id,
+            projectId: dist.projectId,
+            projectRevenue: dist.projectRevenue,
+            revenueSharePercent: dist.revenueSharePercent,
+            distributedSalaries: dist.distributedSalaries,
+            distributedOverhead: dist.distributedOverhead,
+            totalDistributed: dist.totalDistributed,
+          },
+        });
+      }
+    });
+
+    // Return the updated closing
+    const closingResponse = await this.getMonthlyClosing(
+      companyId,
+      year,
+      month,
+    );
+    return { success: true, closing: closingResponse };
+  }
+
+  /**
+   * Reopen a closed month.
+   */
+  async reopenMonth(
+    companyId: string,
+    user: JwtPayload,
+    year: number,
+    month: number,
+    dto: ReopenMonthDto,
+  ): Promise<MonthlyClosingResponse> {
+    const closing = await this.prisma.monthlyClosing.findUnique({
+      where: { companyId_year_month: { companyId, year, month } },
+    });
+
+    if (!closing) {
+      throw new NotFoundException('No existe cierre para este mes');
+    }
+
+    if (closing.status === 'OPEN') {
+      throw new BadRequestException('Este mes no está cerrado');
+    }
+
+    await this.prisma.monthlyClosing.update({
+      where: { id: closing.id },
+      data: {
+        status: 'REOPENED',
+        reopenedById: user.sub,
+        reopenedAt: new Date(),
+        reopenReason: dto.reason,
+      },
+    });
+
+    return this.getMonthlyClosing(companyId, year, month);
   }
 
   // ==================== RESPONSE MAPPERS ====================

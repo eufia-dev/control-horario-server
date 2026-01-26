@@ -2,8 +2,8 @@ export interface WorkerBreakdownItem {
   id: string;
   name: string;
   minutes: number;
-  hourlyCost: number;
-  totalCost: number;
+  hourlyCost?: number; // Only included for admin/owner
+  totalCost?: number; // Only included for admin/owner
 }
 
 export interface ProjectBreakdownResponse {

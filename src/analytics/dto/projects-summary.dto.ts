@@ -3,7 +3,7 @@ export interface ProjectSummaryItem {
   name: string;
   code: string;
   totalMinutes: number;
-  totalCost: number;
+  totalCost?: number; // Only included for admin/owner
 }
 
 export interface ProjectsSummaryResponse {

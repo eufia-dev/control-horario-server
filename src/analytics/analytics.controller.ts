@@ -39,6 +39,7 @@ export class AnalyticsController {
    * Returns aggregated data for all active projects
    * Team leaders only see projects assigned to their team,
    * with aggregated data limited to their team members only
+   * Cost data (totalCost) only included for admin/owner
    */
   @Get('projects-summary')
   @UseGuards(ProjectsFeatureGuard)
@@ -46,13 +47,13 @@ export class AnalyticsController {
     @Req() req: RequestWithUser,
   ): Promise<ProjectsSummaryResponse> {
     const userIds = await this.teamScopeService.getUserIdsInScope(req.user);
+    const isFullAdmin = this.teamScopeService.isFullAdmin(req.user);
     // For team leaders, also filter projects by teamId
-    const teamId = this.teamScopeService.isFullAdmin(req.user)
-      ? null
-      : req.user.teamId;
+    const teamId = isFullAdmin ? null : req.user.teamId;
     return this.analyticsService.getProjectsSummary(req.user.companyId, {
       userIds,
       teamId,
+      isFullAdmin,
     });
   }
 
@@ -60,6 +61,7 @@ export class AnalyticsController {
    * GET /analytics/projects/:projectId/breakdown
    * Returns per-worker breakdown for a specific project
    * Team leaders only see their team members' contributions
+   * Cost data (hourlyCost, totalCost) only included for admin/owner
    */
   @Get('projects/:projectId/breakdown')
   @UseGuards(ProjectsFeatureGuard)
@@ -68,14 +70,13 @@ export class AnalyticsController {
     @Req() req: RequestWithUser,
   ): Promise<ProjectBreakdownResponse> {
     const userIds = await this.teamScopeService.getUserIdsInScope(req.user);
+    const isFullAdmin = this.teamScopeService.isFullAdmin(req.user);
     // For team leaders, also verify project belongs to their team
-    const teamId = this.teamScopeService.isFullAdmin(req.user)
-      ? null
-      : req.user.teamId;
+    const teamId = isFullAdmin ? null : req.user.teamId;
     return this.analyticsService.getProjectBreakdown(
       projectId,
       req.user.companyId,
-      { userIds, teamId },
+      { userIds, teamId, isFullAdmin },
     );
   }
 
@@ -83,14 +84,17 @@ export class AnalyticsController {
    * GET /analytics/workers-summary
    * Returns aggregated data for all active workers
    * Team leaders only see their team members
+   * Cost data (hourlyCost, totalCost) only included for admin/owner
    */
   @Get('workers-summary')
   async getWorkersSummary(
     @Req() req: RequestWithUser,
   ): Promise<WorkersSummaryResponse> {
     const userIds = await this.teamScopeService.getUserIdsInScope(req.user);
+    const isFullAdmin = this.teamScopeService.isFullAdmin(req.user);
     return this.analyticsService.getWorkersSummary(req.user.companyId, {
       userIds,
+      isFullAdmin,
     });
   }
 
@@ -99,6 +103,7 @@ export class AnalyticsController {
    * Returns per-project breakdown for a specific worker
    * Team leaders can only access their team members
    * Requires projects feature to be enabled
+   * Cost data (hourlyCost, cost) only included for admin/owner
    */
   @Get('workers/:workerId/breakdown')
   @UseGuards(ProjectsFeatureGuard)
@@ -116,9 +121,11 @@ export class AnalyticsController {
       );
     }
 
+    const isFullAdmin = this.teamScopeService.isFullAdmin(req.user);
     return this.analyticsService.getWorkerBreakdown(
       workerId,
       req.user.companyId,
+      isFullAdmin,
     );
   }
 

@@ -25,8 +25,8 @@ export interface UserResponse {
   email: string;
   phone: string | null;
   avatarUrl: string | null;
-  salary: number | null;
-  hourlyCost: number;
+  salary?: number | null; // Only included for admin/owner
+  hourlyCost?: number; // Only included for admin/owner
   isActive: boolean;
   role: UserRole;
   relation: string;
@@ -39,6 +39,7 @@ export interface UserResponse {
 
 export interface FindAllOptions {
   userIds?: string[] | null;
+  isFullAdmin?: boolean;
 }
 
 @Injectable()
@@ -73,7 +74,8 @@ export class UsersService {
         },
       });
 
-      return users.map((user) => this.toUserResponse(user));
+      const isFullAdmin = options?.isFullAdmin ?? true;
+      return users.map((user) => this.toUserResponse(user, isFullAdmin));
     } catch (error) {
       this.logger.error(
         `Error al obtener usuarios de la empresa ${companyId}`,
@@ -85,7 +87,11 @@ export class UsersService {
     }
   }
 
-  async findOne(id: string, companyId: string): Promise<UserResponse> {
+  async findOne(
+    id: string,
+    companyId: string,
+    isFullAdmin: boolean = true,
+  ): Promise<UserResponse> {
     try {
       const user = await this.prisma.user.findFirst({
         where: {
@@ -104,7 +110,7 @@ export class UsersService {
         throw new NotFoundException(`Usuario con ID ${id} no encontrado`);
       }
 
-      return this.toUserResponse(user);
+      return this.toUserResponse(user, isFullAdmin);
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
@@ -126,6 +132,9 @@ export class UsersService {
     let existing: User | null = null;
     let emailChanged = false;
     let supabaseEmailUpdated = false;
+
+    // Check if requester is a full admin (OWNER/ADMIN)
+    const isFullAdmin = ['OWNER', 'ADMIN'].includes(requestingUser.role);
 
     try {
       existing = await this.prisma.user.findFirst({
@@ -231,23 +240,29 @@ export class UsersService {
         });
       }
 
-      // Calculate hourly cost if salary is being updated
+      // Team leaders cannot modify salary or hourlyCost - ignore these fields
+      const effectiveSalary = isFullAdmin ? updateUserDto.salary : undefined;
+      const effectiveHourlyCostFromDto = isFullAdmin
+        ? updateUserDto.hourlyCost
+        : undefined;
+
+      // Calculate hourly cost if salary is being updated (only for admins)
       let calculatedHourlyCost: number | undefined;
       const salaryChanged =
-        updateUserDto.salary !== undefined &&
-        updateUserDto.salary !== Number(existing.salary);
+        effectiveSalary !== undefined &&
+        effectiveSalary !== Number(existing.salary);
 
       if (
         salaryChanged &&
-        updateUserDto.salary !== null &&
-        updateUserDto.salary !== undefined
+        effectiveSalary !== null &&
+        effectiveSalary !== undefined
       ) {
         // Auto-calculate hourly cost from salary
         calculatedHourlyCost =
           await this.hourlyCostService.calculateHourlyCostFromSalary(
             companyId,
             id,
-            updateUserDto.salary,
+            effectiveSalary,
           );
       }
 
@@ -261,12 +276,12 @@ export class UsersService {
       if (salaryChanged && calculatedHourlyCost !== undefined) {
         // Salary changed to a non-null value - always use calculated value
         finalHourlyCost = calculatedHourlyCost;
-      } else if (salaryChanged && updateUserDto.salary === null) {
+      } else if (salaryChanged && effectiveSalary === null) {
         // Salary removed - reset hourly cost to 0
         finalHourlyCost = 0;
-      } else if (!salaryChanged && updateUserDto.hourlyCost !== undefined) {
+      } else if (!salaryChanged && effectiveHourlyCostFromDto !== undefined) {
         // Manual override when salary didn't change
-        finalHourlyCost = updateUserDto.hourlyCost;
+        finalHourlyCost = effectiveHourlyCostFromDto;
       }
       // Otherwise undefined - Prisma won't update the field
 
@@ -276,7 +291,7 @@ export class UsersService {
           name: updateUserDto.name,
           email: updateUserDto.email,
           phone: updateUserDto.phone,
-          salary: updateUserDto.salary,
+          salary: effectiveSalary,
           hourlyCost: finalHourlyCost,
           isActive: updateUserDto.isActive,
           role: updateUserDto.role,
@@ -290,7 +305,7 @@ export class UsersService {
         },
       });
 
-      return this.toUserResponse(user);
+      return this.toUserResponse(user, isFullAdmin);
     } catch (error) {
       if (emailChanged && supabaseEmailUpdated && existing) {
         try {
@@ -420,6 +435,7 @@ export class UsersService {
 
   private toUserResponse(
     user: User & { team?: { id: string; name: string } | null },
+    isFullAdmin: boolean = true,
   ): UserResponse {
     return {
       id: user.id,
@@ -428,8 +444,8 @@ export class UsersService {
       email: user.email,
       phone: user.phone,
       avatarUrl: user.avatarUrl,
-      salary: user.salary ? Number(user.salary) : null,
-      hourlyCost: Number(user.hourlyCost),
+      ...(isFullAdmin && { salary: user.salary ? Number(user.salary) : null }),
+      ...(isFullAdmin && { hourlyCost: Number(user.hourlyCost) }),
       isActive: user.isActive,
       role: user.role,
       relation: user.relation,

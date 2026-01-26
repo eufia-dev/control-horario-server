@@ -1,9 +1,9 @@
 export interface WorkerSummaryItem {
   id: string;
   name: string;
-  hourlyCost: number;
+  hourlyCost?: number; // Only included for admin/owner
   totalMinutes: number;
-  totalCost: number;
+  totalCost?: number; // Only included for admin/owner
 }
 
 export interface WorkersSummaryResponse {

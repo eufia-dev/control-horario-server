@@ -66,11 +66,18 @@ export class AnalyticsService {
    * Returns aggregated data for all active projects
    * When teamId is provided (team leader case), only returns projects assigned to that team
    * When userIds is provided, only includes time entries from those users
+   * Cost data (totalCost) only included for admin/owner
    */
   async getProjectsSummary(
     companyId: string,
-    options?: { userIds?: string[] | null; teamId?: string | null },
+    options?: {
+      userIds?: string[] | null;
+      teamId?: string | null;
+      isFullAdmin?: boolean;
+    },
   ): Promise<ProjectsSummaryResponse> {
+    const isFullAdmin = options?.isFullAdmin ?? true;
+
     // Get projects based on scope
     const projects = await this.prisma.project.findMany({
       where: {
@@ -135,12 +142,16 @@ export class AnalyticsService {
         name: project.name,
         code: project.code,
         totalMinutes: stats.minutes,
-        totalCost: this.roundToTwoDecimals(stats.cost),
+        ...(isFullAdmin && { totalCost: this.roundToTwoDecimals(stats.cost) }),
       };
     });
 
-    // Sort by totalCost descending
-    projectSummaries.sort((a, b) => b.totalCost - a.totalCost);
+    // Sort by totalMinutes descending for team leaders, totalCost for admins
+    if (isFullAdmin) {
+      projectSummaries.sort((a, b) => (b.totalCost ?? 0) - (a.totalCost ?? 0));
+    } else {
+      projectSummaries.sort((a, b) => b.totalMinutes - a.totalMinutes);
+    }
 
     return { projects: projectSummaries };
   }
@@ -150,12 +161,19 @@ export class AnalyticsService {
    * Returns per-worker breakdown for a specific project
    * When teamId is provided, verifies project belongs to that team
    * When userIds is provided, only includes workers from that list
+   * Cost data (hourlyCost, totalCost) only included for admin/owner
    */
   async getProjectBreakdown(
     projectId: string,
     companyId: string,
-    options?: { userIds?: string[] | null; teamId?: string | null },
+    options?: {
+      userIds?: string[] | null;
+      teamId?: string | null;
+      isFullAdmin?: boolean;
+    },
   ): Promise<ProjectBreakdownResponse> {
+    const isFullAdmin = options?.isFullAdmin ?? true;
+
     // Verify project exists, belongs to company, and (if team-scoped) belongs to the team
     const project = await this.prisma.project.findFirst({
       where: {
@@ -212,14 +230,20 @@ export class AnalyticsService {
           id: user.id,
           name: user.name,
           minutes,
-          hourlyCost,
-          totalCost: this.calculateCost(minutes, hourlyCost),
+          ...(isFullAdmin && { hourlyCost }),
+          ...(isFullAdmin && {
+            totalCost: this.calculateCost(minutes, hourlyCost),
+          }),
         });
       }
     });
 
-    // Sort by totalCost descending
-    workers.sort((a, b) => b.totalCost - a.totalCost);
+    // Sort by totalCost descending for admins, minutes for team leaders
+    if (isFullAdmin) {
+      workers.sort((a, b) => (b.totalCost ?? 0) - (a.totalCost ?? 0));
+    } else {
+      workers.sort((a, b) => b.minutes - a.minutes);
+    }
 
     return { workers };
   }
@@ -227,11 +251,14 @@ export class AnalyticsService {
   /**
    * GET /analytics/workers-summary
    * Returns aggregated data for all active workers (internal users only)
+   * Cost data (hourlyCost, totalCost) only included for admin/owner
    */
   async getWorkersSummary(
     companyId: string,
-    options?: { userIds?: string[] | null },
+    options?: { userIds?: string[] | null; isFullAdmin?: boolean },
   ): Promise<WorkersSummaryResponse> {
+    const isFullAdmin = options?.isFullAdmin ?? true;
+
     // Run both queries in parallel for better latency
     const [activeUsers, userTimeEntries] = await Promise.all([
       // Get all active internal users
@@ -278,9 +305,11 @@ export class AnalyticsService {
       workers.push({
         id: user.id,
         name: user.name,
-        hourlyCost,
+        ...(isFullAdmin && { hourlyCost }),
         totalMinutes,
-        totalCost: this.calculateCost(totalMinutes, hourlyCost),
+        ...(isFullAdmin && {
+          totalCost: this.calculateCost(totalMinutes, hourlyCost),
+        }),
       });
     });
 
@@ -293,10 +322,12 @@ export class AnalyticsService {
   /**
    * GET /analytics/workers/:workerId/breakdown
    * Returns per-project breakdown for a specific worker
+   * Cost data (hourlyCost, cost) only included for admin/owner
    */
   async getWorkerBreakdown(
     userId: string,
     companyId: string,
+    isFullAdmin: boolean = true,
   ): Promise<WorkerBreakdownResponse> {
     // Verify user exists and belongs to company
     const user = await this.prisma.user.findFirst({
@@ -358,7 +389,7 @@ export class AnalyticsService {
           name: project.name,
           code: project.code,
           minutes,
-          cost: this.calculateCost(minutes, hourlyCost),
+          ...(isFullAdmin && { cost: this.calculateCost(minutes, hourlyCost) }),
         };
       })
       .filter((p): p is NonNullable<typeof p> => p !== null);
@@ -370,7 +401,7 @@ export class AnalyticsService {
       worker: {
         id: user.id,
         name: user.name,
-        hourlyCost,
+        ...(isFullAdmin && { hourlyCost }),
       },
       projects: projectsBreakdown,
     };
@@ -729,7 +760,9 @@ export class AnalyticsService {
       sickLeaveDays,
       otherAbsenceDays,
       coffeePauseMinutes,
-      ...(isFullAdmin && { totalCost: this.calculateCost(loggedMinutes, hourlyCost) }),
+      ...(isFullAdmin && {
+        totalCost: this.calculateCost(loggedMinutes, hourlyCost),
+      }),
     };
   }
 
@@ -804,8 +837,15 @@ export class AnalyticsService {
 
     // Only include totalCost for admin/owner
     if (!isFullAdmin) {
-      const { totalCost, ...totalsWithoutCost } = baseTotals;
-      return totalsWithoutCost;
+      return {
+        expectedMinutes: baseTotals.expectedMinutes,
+        loggedMinutes: baseTotals.loggedMinutes,
+        differenceMinutes: baseTotals.differenceMinutes,
+        vacationDays: baseTotals.vacationDays,
+        sickLeaveDays: baseTotals.sickLeaveDays,
+        otherAbsenceDays: baseTotals.otherAbsenceDays,
+        coffeePauseMinutes: baseTotals.coffeePauseMinutes,
+      };
     }
 
     return baseTotals;

@@ -26,6 +26,14 @@ import {
   type FullMonthlyCostsResponse,
   type AllProjectsCostsResponse,
   type AnnualCostsResponse,
+  type MonthlySalariesResponse,
+  type MonthlySalaryResponse,
+  type MonthlyOverheadResponse,
+  type OverheadCostResponse,
+  type OverheadCostTypeOption,
+  type MonthlyClosingResponse,
+  type DistributionPreviewResponse,
+  type CloseMonthResponse,
 } from './costs.service.js';
 import {
   UpsertMonthlyRevenueDto,
@@ -39,6 +47,16 @@ import { ExternalCostQueryDto } from './dto/external-cost-query.dto.js';
 import { AllProjectsQueryDto } from './dto/all-projects-query.dto.js';
 import { AnnualCostsQueryDto } from './dto/annual-costs-query.dto.js';
 import { SaveAnnualCostsDto } from './dto/save-annual-costs.dto.js';
+import {
+  MonthlySalaryQueryDto,
+  UpsertMonthlySalaryDto,
+} from './dto/monthly-salary.dto.js';
+import {
+  MonthlyOverheadQueryDto,
+  CreateOverheadCostDto,
+  UpdateOverheadCostDto,
+} from './dto/monthly-overhead.dto.js';
+import { ReopenMonthDto } from './dto/month-closing.dto.js';
 
 type RequestWithUser = Request & { user: JwtPayload };
 
@@ -261,6 +279,205 @@ export class CostsController {
       month,
       req.user.companyId,
       req.user,
+    );
+  }
+
+  // ==================== MONTHLY SALARIES ====================
+
+  /**
+   * GET /costs/monthly-salaries?year&month
+   * Returns all active users with their salary data for the specified month.
+   */
+  @Get('monthly-salaries')
+  getMonthlySalaries(
+    @Query() query: MonthlySalaryQueryDto,
+    @Req() req: RequestWithUser,
+  ): Promise<MonthlySalariesResponse> {
+    return this.costsService.getMonthlySalaries(
+      req.user.companyId,
+      query.year,
+      query.month,
+    );
+  }
+
+  /**
+   * POST /costs/monthly-salaries
+   * Create or update a user's monthly salary entry.
+   * If baseSalary is provided and different, updates User.salary and hourlyCost.
+   */
+  @Post('monthly-salaries')
+  upsertMonthlySalary(
+    @Body() dto: UpsertMonthlySalaryDto,
+    @Req() req: RequestWithUser,
+  ): Promise<MonthlySalaryResponse> {
+    return this.costsService.upsertMonthlySalary(
+      req.user.companyId,
+      req.user,
+      dto,
+    );
+  }
+
+  /**
+   * DELETE /costs/monthly-salaries/:id
+   * Delete a monthly salary extras entry.
+   * Only deletes the extras record, does NOT affect User.salary.
+   */
+  @Delete('monthly-salaries/:id')
+  deleteMonthlySalary(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: RequestWithUser,
+  ): Promise<void> {
+    return this.costsService.deleteMonthlySalary(
+      id,
+      req.user.companyId,
+      req.user,
+    );
+  }
+
+  // ==================== MONTHLY OVERHEAD COSTS ====================
+
+  /**
+   * GET /costs/monthly-overhead?year&month
+   * Returns all overhead costs for the specified month.
+   */
+  @Get('monthly-overhead')
+  getMonthlyOverhead(
+    @Query() query: MonthlyOverheadQueryDto,
+    @Req() req: RequestWithUser,
+  ): Promise<MonthlyOverheadResponse> {
+    return this.costsService.getMonthlyOverhead(
+      req.user.companyId,
+      query.year,
+      query.month,
+    );
+  }
+
+  /**
+   * GET /costs/overhead-cost-types
+   * Returns available overhead cost types for dropdown.
+   */
+  @Get('overhead-cost-types')
+  getOverheadCostTypes(): OverheadCostTypeOption[] {
+    return this.costsService.getOverheadCostTypes();
+  }
+
+  /**
+   * POST /costs/monthly-overhead
+   * Create a new overhead cost entry.
+   */
+  @Post('monthly-overhead')
+  createOverheadCost(
+    @Body() dto: CreateOverheadCostDto,
+    @Req() req: RequestWithUser,
+  ): Promise<OverheadCostResponse & { warning?: string }> {
+    return this.costsService.createOverheadCost(
+      req.user.companyId,
+      req.user,
+      dto,
+    );
+  }
+
+  /**
+   * PATCH /costs/monthly-overhead/:id
+   * Update an existing overhead cost.
+   */
+  @Patch('monthly-overhead/:id')
+  updateOverheadCost(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateOverheadCostDto,
+    @Req() req: RequestWithUser,
+  ): Promise<OverheadCostResponse & { warning?: string }> {
+    return this.costsService.updateOverheadCost(
+      id,
+      req.user.companyId,
+      req.user,
+      dto,
+    );
+  }
+
+  /**
+   * DELETE /costs/monthly-overhead/:id
+   * Delete an overhead cost entry.
+   */
+  @Delete('monthly-overhead/:id')
+  deleteOverheadCost(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: RequestWithUser,
+  ): Promise<void> {
+    return this.costsService.deleteOverheadCost(
+      id,
+      req.user.companyId,
+      req.user,
+    );
+  }
+
+  // ==================== MONTH CLOSING ====================
+
+  /**
+   * GET /costs/monthly-closing/:year/:month
+   * Get the closing status and distribution data for a month.
+   */
+  @Get('monthly-closing/:year/:month')
+  getMonthlyClosing(
+    @Param('year', ParseIntPipe) year: number,
+    @Param('month', ParseIntPipe) month: number,
+    @Req() req: RequestWithUser,
+  ): Promise<MonthlyClosingResponse> {
+    return this.costsService.getMonthlyClosing(req.user.companyId, year, month);
+  }
+
+  /**
+   * GET /costs/monthly-closing/:year/:month/preview
+   * Preview what the distribution would look like WITHOUT actually closing.
+   */
+  @Get('monthly-closing/:year/:month/preview')
+  previewDistribution(
+    @Param('year', ParseIntPipe) year: number,
+    @Param('month', ParseIntPipe) month: number,
+    @Req() req: RequestWithUser,
+  ): Promise<DistributionPreviewResponse> {
+    return this.costsService.previewDistribution(
+      req.user.companyId,
+      year,
+      month,
+    );
+  }
+
+  /**
+   * POST /costs/monthly-closing/:year/:month/close
+   * Close the month. Creates distribution records and snapshots salary data.
+   */
+  @Post('monthly-closing/:year/:month/close')
+  closeMonth(
+    @Param('year', ParseIntPipe) year: number,
+    @Param('month', ParseIntPipe) month: number,
+    @Req() req: RequestWithUser,
+  ): Promise<CloseMonthResponse> {
+    return this.costsService.closeMonth(
+      req.user.companyId,
+      req.user,
+      year,
+      month,
+    );
+  }
+
+  /**
+   * POST /costs/monthly-closing/:year/:month/reopen
+   * Reopen a closed month. Only ADMIN/OWNER can do this.
+   */
+  @Post('monthly-closing/:year/:month/reopen')
+  reopenMonth(
+    @Param('year', ParseIntPipe) year: number,
+    @Param('month', ParseIntPipe) month: number,
+    @Body() dto: ReopenMonthDto,
+    @Req() req: RequestWithUser,
+  ): Promise<MonthlyClosingResponse> {
+    return this.costsService.reopenMonth(
+      req.user.companyId,
+      req.user,
+      year,
+      month,
+      dto,
     );
   }
 }
