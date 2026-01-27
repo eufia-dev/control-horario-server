@@ -27,8 +27,6 @@ import type {
   ProjectMonthlyRevenue,
   ProjectExternalCostEstimate,
   ProjectExternalCostActual,
-  ExternalCostExpenseType,
-  OverheadCostType as PrismaOverheadCostType,
 } from '@prisma/client';
 
 // Response interfaces
@@ -57,7 +55,6 @@ export interface CostEstimateResponse {
   month: number;
   amount: number;
   provider: ProviderInfo | null;
-  expenseType: ExternalCostExpenseType | null;
   description: string | null;
   createdAt: Date;
   updatedAt: Date | null;
@@ -70,7 +67,6 @@ export interface CostActualResponse {
   month: number;
   amount: number;
   provider: ProviderInfo;
-  expenseType: ExternalCostExpenseType;
   description: string | null;
   isBilled: boolean;
   issueDate: Date | null;
@@ -176,7 +172,6 @@ export interface UserMonthlySalary {
   userEmail: string;
   baseSalary: number | null; // From User.salary (null if user has no salary set)
   extras: number; // From MonthlyUserSalary.extras (0 if no record)
-  extrasDescription: string | null;
   totalSalary: number | null; // baseSalary + extras (null if baseSalary is null)
   notes: string | null;
 }
@@ -200,7 +195,6 @@ export interface MonthlySalaryResponse {
   month: number;
   baseSalary: number; // Current User.salary after update
   extras: number;
-  extrasDescription: string | null;
   totalSalary: number;
   notes: string | null;
   warning?: string; // Present if month is CLOSED
@@ -241,6 +235,7 @@ export interface ProjectDistribution {
   revenueSharePercent: number;
   distributedSalaries: number;
   distributedOverhead: number;
+  distributedNonProductive: number;
   totalDistributed: number;
 }
 
@@ -253,6 +248,7 @@ export interface MonthlyClosingResponse {
   // Totals (null if never closed)
   totalSalaries: number | null;
   totalOverhead: number | null;
+  totalNonProductive: number | null;
   totalRevenue: number | null;
 
   // Audit info
@@ -290,6 +286,7 @@ export interface DistributionPreviewResponse {
   // Preview data
   totalSalaries: number;
   totalOverhead: number;
+  totalNonProductive: number;
   totalRevenue: number;
 
   distributions: ProjectDistribution[];
@@ -298,6 +295,18 @@ export interface DistributionPreviewResponse {
 export interface CloseMonthResponse {
   success: boolean;
   closing: MonthlyClosingResponse;
+}
+
+// ==================== MONTHLY COST CALCULATION TYPES ====================
+
+/**
+ * Data structure for user monthly cost calculation
+ */
+export interface UserMonthlyCostData {
+  costHour: number;
+  totalHours: number;
+  totalSalary: number;
+  hasHours: boolean;
 }
 
 @Injectable()
@@ -433,7 +442,6 @@ export class CostsService {
         month: dto.month,
         amount: dto.amount,
         providerId: dto.providerId,
-        expenseType: dto.expenseType,
         description: dto.description,
       },
       include: {
@@ -470,7 +478,6 @@ export class CostsService {
         month: dto.month,
         amount: dto.amount,
         providerId: dto.providerId,
-        expenseType: dto.expenseType,
         description: dto.description,
       },
       include: {
@@ -545,7 +552,6 @@ export class CostsService {
         month: dto.month,
         amount: dto.amount,
         providerId: dto.providerId,
-        expenseType: dto.expenseType,
         description: dto.description,
         isBilled: dto.isBilled ?? false,
         issueDate: dto.issueDate ? new Date(dto.issueDate) : null,
@@ -582,7 +588,6 @@ export class CostsService {
         month: dto.month,
         amount: dto.amount,
         providerId: dto.providerId,
-        expenseType: dto.expenseType,
         description: dto.description,
         isBilled: dto.isBilled,
         issueDate:
@@ -755,15 +760,210 @@ export class CostsService {
     return { totalDistributed: Number(distribution.totalDistributed) };
   }
 
+  // ==================== MONTHLY COST CALCULATION HELPERS ====================
+
+  /**
+   * Calculate monthly cost/hour for all non-GUEST users in the company.
+   * costHour = (baseSalary + extras) / totalHoursWorked
+   * Does NOT filter by isActive - includes users who may have logged time before being deactivated.
+   */
+  private async calculateUsersMonthlyCostHour(
+    companyId: string,
+    year: number,
+    month: number,
+  ): Promise<Map<string, UserMonthlyCostData>> {
+    // Calculate date range for the month
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+
+    // Get all non-GUEST users (regardless of isActive - they may have logged time before deactivation)
+    const users = await this.prisma.user.findMany({
+      where: {
+        companyId,
+        deletedAt: null,
+        relation: { not: 'GUEST' },
+      },
+      select: {
+        id: true,
+        salary: true,
+      },
+    });
+
+    // Get monthly salary extras for all users
+    const salaryRecords = await this.prisma.monthlyUserSalary.findMany({
+      where: { companyId, year, month },
+    });
+    const salaryByUser = new Map(salaryRecords.map((s) => [s.userId, s]));
+
+    // Get all time entries for the month grouped by user
+    const timeEntries = await this.prisma.timeEntry.groupBy({
+      by: ['userId'],
+      where: {
+        companyId,
+        entryType: { in: ['WORK', 'PAUSE_COFFEE'] },
+        startTime: {
+          gte: startDate,
+          lte: endDate,
+        },
+        user: {
+          relation: { not: 'GUEST' },
+        },
+      },
+      _sum: {
+        durationMinutes: true,
+      },
+    });
+    const hoursByUser = new Map(
+      timeEntries.map((e) => [e.userId, (e._sum.durationMinutes || 0) / 60]),
+    );
+
+    // Build the result map
+    const result = new Map<string, UserMonthlyCostData>();
+
+    for (const user of users) {
+      const salaryRecord = salaryByUser.get(user.id);
+      const baseSalary = user.salary ? Number(user.salary) : 0;
+      const extras = salaryRecord ? Number(salaryRecord.extras) : 0;
+      const totalSalary = baseSalary + extras;
+      const totalHours = hoursByUser.get(user.id) || 0;
+
+      // Only include users who have a salary
+      if (totalSalary > 0) {
+        const costHour = totalHours > 0 ? totalSalary / totalHours : 0;
+        result.set(user.id, {
+          costHour,
+          totalHours,
+          totalSalary,
+          hasHours: totalHours > 0,
+        });
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Get IDs of projects that belong to the "No productivos" category.
+   */
+  private async getNonProductiveProjectIds(
+    companyId: string,
+  ): Promise<Set<string>> {
+    // Find the "No productivos" category
+    const category = await this.prisma.projectCategory.findFirst({
+      where: {
+        companyId,
+        name: 'No productivos',
+      },
+      select: { id: true },
+    });
+
+    if (!category) {
+      return new Set();
+    }
+
+    // Get all projects in this category
+    const projects = await this.prisma.project.findMany({
+      where: {
+        companyId,
+        categoryId: category.id,
+      },
+      select: { id: true },
+    });
+
+    return new Set(projects.map((p) => p.id));
+  }
+
+  /**
+   * Calculate non-productive costs to distribute.
+   * Includes:
+   * - Hours on "No productivos" category projects * user's costHour
+   * - Full salary of users who logged 0 hours
+   */
+  private async calculateNonProductiveCosts(
+    companyId: string,
+    year: number,
+    month: number,
+    userCostHours: Map<string, UserMonthlyCostData>,
+  ): Promise<{
+    nonProductiveCost: number;
+    zeroHoursUsers: Array<{ userId: string; salary: number }>;
+    nonProductiveHoursCost: number;
+  }> {
+    // Get non-productive project IDs
+    const nonProductiveProjectIds =
+      await this.getNonProductiveProjectIds(companyId);
+
+    // Calculate date range for the month
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+
+    // Get time entries on non-productive projects grouped by user
+    let nonProductiveHoursCost = 0;
+
+    if (nonProductiveProjectIds.size > 0) {
+      const nonProductiveEntries = await this.prisma.timeEntry.findMany({
+        where: {
+          companyId,
+          projectId: { in: Array.from(nonProductiveProjectIds) },
+          entryType: { in: ['WORK', 'PAUSE_COFFEE'] },
+          startTime: {
+            gte: startDate,
+            lte: endDate,
+          },
+          user: {
+            relation: { not: 'GUEST' },
+            deletedAt: null,
+          },
+        },
+        select: {
+          userId: true,
+          durationMinutes: true,
+        },
+      });
+
+      // Sum cost for non-productive hours
+      for (const entry of nonProductiveEntries) {
+        const userCostData = userCostHours.get(entry.userId);
+        if (userCostData && userCostData.costHour > 0) {
+          const hours = entry.durationMinutes / 60;
+          nonProductiveHoursCost += hours * userCostData.costHour;
+        }
+      }
+    }
+
+    // Find users with salary but 0 hours - their entire salary is non-productive
+    const zeroHoursUsers: Array<{ userId: string; salary: number }> = [];
+    for (const [userId, data] of userCostHours) {
+      if (!data.hasHours && data.totalSalary > 0) {
+        zeroHoursUsers.push({ userId, salary: data.totalSalary });
+      }
+    }
+
+    const zeroHoursSalaries = zeroHoursUsers.reduce(
+      (sum, u) => sum + u.salary,
+      0,
+    );
+    const nonProductiveCost = nonProductiveHoursCost + zeroHoursSalaries;
+
+    return {
+      nonProductiveCost: Math.round(nonProductiveCost * 100) / 100,
+      zeroHoursUsers,
+      nonProductiveHoursCost: Math.round(nonProductiveHoursCost * 100) / 100,
+    };
+  }
+
   /**
    * Calculate internal costs from time entries for a project/month
-   * Internal cost = sum of (hours * user.hourlyCost)
+   * Internal cost = sum of (hours * user's cost/hour)
+   * When userCostHours is provided (during month closing), uses calculated monthly cost/hour.
+   * Otherwise falls back to User.hourlyCost for real-time estimates.
    */
   private async calculateInternalCosts(
     projectId: string,
     companyId: string,
     year: number,
     month: number,
+    userCostHours?: Map<string, UserMonthlyCostData>,
   ): Promise<number> {
     // Calculate date range for the month
     const startDate = new Date(year, month - 1, 1);
@@ -791,7 +991,10 @@ export class CostsService {
     let totalCost = 0;
     for (const entry of timeEntries) {
       const hours = entry.durationMinutes / 60;
-      const hourlyCost = Number(entry.user.hourlyCost);
+      // Use monthly cost/hour if provided, otherwise fall back to User.hourlyCost
+      const userCostData = userCostHours?.get(entry.userId);
+      const hourlyCost =
+        userCostData?.costHour ?? Number(entry.user.hourlyCost);
       totalCost += hours * hourlyCost;
     }
 
@@ -1212,7 +1415,6 @@ export class CostsService {
                 month: item.month,
                 amount: item.costEstimate.amount,
                 providerId: item.costEstimate.providerId,
-                expenseType: item.costEstimate.expenseType,
                 description: item.costEstimate.description,
               },
             });
@@ -1242,9 +1444,6 @@ export class CostsService {
                 amount: item.costEstimate.amount,
                 ...(item.costEstimate.providerId !== undefined && {
                   providerId: item.costEstimate.providerId,
-                }),
-                ...(item.costEstimate.expenseType !== undefined && {
-                  expenseType: item.costEstimate.expenseType,
                 }),
                 ...(item.costEstimate.description !== undefined && {
                   description: item.costEstimate.description,
@@ -1276,12 +1475,13 @@ export class CostsService {
     const monthStatus =
       (closing?.status as MonthClosingStatus) ?? MonthClosingStatus.OPEN;
 
-    // Get all active users in the company
+    // Get all active non-GUEST users in the company
     const users = await this.prisma.user.findMany({
       where: {
         companyId,
         isActive: true,
         deletedAt: null,
+        relation: { not: 'GUEST' },
       },
       select: {
         id: true,
@@ -1331,7 +1531,6 @@ export class CostsService {
         userEmail: user.email,
         baseSalary,
         extras,
-        extrasDescription: record?.extrasDescription ?? null,
         totalSalary,
         notes: record?.notes ?? null,
       };
@@ -1423,7 +1622,6 @@ export class CostsService {
       },
       update: {
         extras: dto.extras ?? 0,
-        extrasDescription: dto.extrasDescription,
         notes: dto.notes,
       },
       create: {
@@ -1432,7 +1630,6 @@ export class CostsService {
         year: dto.year,
         month: dto.month,
         extras: dto.extras ?? 0,
-        extrasDescription: dto.extrasDescription,
         notes: dto.notes,
       },
     });
@@ -1447,7 +1644,6 @@ export class CostsService {
       month: dto.month,
       baseSalary,
       extras,
-      extrasDescription: record.extrasDescription,
       totalSalary: baseSalary + extras,
       notes: record.notes,
       warning,
@@ -1738,6 +1934,7 @@ export class CostsService {
         status: MonthClosingStatus.OPEN,
         totalSalaries: null,
         totalOverhead: null,
+        totalNonProductive: null,
         totalRevenue: null,
         closedBy: null,
         closedAt: null,
@@ -1747,6 +1944,29 @@ export class CostsService {
         distributions: null,
       };
     }
+
+    // Map distributions and calculate total non-productive from sum
+    const distributions =
+      closing.status !== 'OPEN'
+        ? closing.distributions.map((d) => ({
+            projectId: d.projectId,
+            projectName: d.project.name,
+            projectCode: d.project.code,
+            projectRevenue: Number(d.projectRevenue),
+            revenueSharePercent: Number(d.revenueSharePercent),
+            distributedSalaries: Number(d.distributedSalaries),
+            distributedOverhead: Number(d.distributedOverhead),
+            distributedNonProductive: d.distributedNonProductive
+              ? Number(d.distributedNonProductive)
+              : 0,
+            totalDistributed: Number(d.totalDistributed),
+          }))
+        : null;
+
+    // Calculate total non-productive from distributions
+    const totalNonProductive =
+      distributions?.reduce((sum, d) => sum + d.distributedNonProductive, 0) ??
+      null;
 
     return {
       id: closing.id,
@@ -1759,30 +1979,20 @@ export class CostsService {
       totalOverhead: closing.totalOverhead
         ? Number(closing.totalOverhead)
         : null,
+      totalNonProductive,
       totalRevenue: closing.totalRevenue ? Number(closing.totalRevenue) : null,
       closedBy: closing.closedBy,
       closedAt: closing.closedAt,
       reopenedBy: closing.reopenedBy,
       reopenedAt: closing.reopenedAt,
       reopenReason: closing.reopenReason,
-      distributions:
-        closing.status !== 'OPEN'
-          ? closing.distributions.map((d) => ({
-              projectId: d.projectId,
-              projectName: d.project.name,
-              projectCode: d.project.code,
-              projectRevenue: Number(d.projectRevenue),
-              revenueSharePercent: Number(d.revenueSharePercent),
-              distributedSalaries: Number(d.distributedSalaries),
-              distributedOverhead: Number(d.distributedOverhead),
-              totalDistributed: Number(d.totalDistributed),
-            }))
-          : null,
+      distributions,
     };
   }
 
   /**
    * Preview what the distribution would look like WITHOUT actually closing.
+   * Now includes non-productive costs distribution.
    */
   async previewDistribution(
     companyId: string,
@@ -1791,9 +2001,21 @@ export class CostsService {
   ): Promise<DistributionPreviewResponse> {
     const validationErrors: ValidationError[] = [];
 
-    // Get active users and their salaries
+    // Calculate user cost/hours for the month (includes non-GUEST users regardless of isActive)
+    const userCostHours = await this.calculateUsersMonthlyCostHour(
+      companyId,
+      year,
+      month,
+    );
+
+    // Get active non-GUEST users to validate salaries for UI purposes
     const users = await this.prisma.user.findMany({
-      where: { companyId, isActive: true, deletedAt: null },
+      where: {
+        companyId,
+        isActive: true,
+        deletedAt: null,
+        relation: { not: 'GUEST' },
+      },
       select: { id: true, name: true, salary: true },
     });
 
@@ -1803,7 +2025,7 @@ export class CostsService {
     });
     const salaryByUser = new Map(salaryRecords.map((s) => [s.userId, s]));
 
-    // Calculate total salaries and check for missing
+    // Calculate total salaries from active users and check for missing
     let totalSalaries = 0;
     for (const user of users) {
       const record = salaryByUser.get(user.id);
@@ -1830,23 +2052,41 @@ export class CostsService {
       0,
     );
 
-    // Get active projects with their revenue
-    const projects = await this.prisma.project.findMany({
+    // Calculate non-productive costs (hours on "No productivos" + zero-hour salaries)
+    const nonProductiveCostsData = await this.calculateNonProductiveCosts(
+      companyId,
+      year,
+      month,
+      userCostHours,
+    );
+    const totalNonProductive = nonProductiveCostsData.nonProductiveCost;
+
+    // Get non-productive project IDs to exclude from distribution
+    const nonProductiveProjectIds =
+      await this.getNonProductiveProjectIds(companyId);
+
+    // Get active projects excluding non-productive ones
+    const allProjects = await this.prisma.project.findMany({
       where: { companyId, isActive: true },
       select: { id: true, name: true, code: true },
     });
 
-    if (projects.length === 0) {
+    // Filter to productive projects only for distribution
+    const productiveProjects = allProjects.filter(
+      (p) => !nonProductiveProjectIds.has(p.id),
+    );
+
+    if (productiveProjects.length === 0) {
       validationErrors.push({
         type: 'NO_ACTIVE_PROJECTS',
-        message: 'No hay proyectos activos para distribuir costes',
+        message: 'No hay proyectos productivos activos para distribuir costes',
       });
     }
 
-    // Get revenues for active projects
+    // Get revenues for productive projects
     const revenues = await this.prisma.projectMonthlyRevenue.findMany({
       where: {
-        projectId: { in: projects.map((p) => p.id) },
+        projectId: { in: productiveProjects.map((p) => p.id) },
         year,
         month,
       },
@@ -1855,7 +2095,7 @@ export class CostsService {
 
     // Check for missing revenues and calculate total
     let totalRevenue = 0;
-    for (const project of projects) {
+    for (const project of productiveProjects) {
       const revenue = revenueByProject.get(project.id);
       if (!revenue || revenue.actualRevenue === null) {
         validationErrors.push({
@@ -1871,7 +2111,7 @@ export class CostsService {
     // Warn if total revenue is zero
     if (
       totalRevenue === 0 &&
-      projects.length > 0 &&
+      productiveProjects.length > 0 &&
       validationErrors.filter((e) => e.type === 'MISSING_REVENUE').length === 0
     ) {
       validationErrors.push({
@@ -1881,42 +2121,49 @@ export class CostsService {
       });
     }
 
-    // Calculate distributions
-    const distributions: ProjectDistribution[] = projects.map((project) => {
-      const revenue = revenueByProject.get(project.id);
-      const projectRevenue = revenue?.actualRevenue
-        ? Number(revenue.actualRevenue)
-        : 0;
+    // Calculate distributions for productive projects only
+    const distributions: ProjectDistribution[] = productiveProjects.map(
+      (project) => {
+        const revenue = revenueByProject.get(project.id);
+        const projectRevenue = revenue?.actualRevenue
+          ? Number(revenue.actualRevenue)
+          : 0;
 
-      let revenueSharePercent: number;
-      if (totalRevenue === 0) {
-        // Distribute equally if no revenue
-        revenueSharePercent = 100 / projects.length;
-      } else {
-        revenueSharePercent = (projectRevenue / totalRevenue) * 100;
-      }
+        let revenueSharePercent: number;
+        if (totalRevenue === 0) {
+          // Distribute equally if no revenue
+          revenueSharePercent = 100 / productiveProjects.length;
+        } else {
+          revenueSharePercent = (projectRevenue / totalRevenue) * 100;
+        }
 
-      const distributedSalaries = (totalSalaries * revenueSharePercent) / 100;
-      const distributedOverhead = (totalOverhead * revenueSharePercent) / 100;
+        const distributedSalaries = (totalSalaries * revenueSharePercent) / 100;
+        const distributedOverhead = (totalOverhead * revenueSharePercent) / 100;
+        const distributedNonProductive =
+          (totalNonProductive * revenueSharePercent) / 100;
 
-      return {
-        projectId: project.id,
-        projectName: project.name,
-        projectCode: project.code,
-        projectRevenue,
-        revenueSharePercent: Math.round(revenueSharePercent * 100) / 100,
-        distributedSalaries: Math.round(distributedSalaries * 100) / 100,
-        distributedOverhead: Math.round(distributedOverhead * 100) / 100,
-        totalDistributed:
-          Math.round((distributedSalaries + distributedOverhead) * 100) / 100,
-      };
-    });
-
-    // Can close if no critical errors (MISSING_SALARY with no base salary, NO_ACTIVE_PROJECTS)
-    const criticalErrors = validationErrors.filter(
-      (e) => e.type === 'MISSING_SALARY' || e.type === 'NO_ACTIVE_PROJECTS',
+        return {
+          projectId: project.id,
+          projectName: project.name,
+          projectCode: project.code,
+          projectRevenue,
+          revenueSharePercent: Math.round(revenueSharePercent * 100) / 100,
+          distributedSalaries: Math.round(distributedSalaries * 100) / 100,
+          distributedOverhead: Math.round(distributedOverhead * 100) / 100,
+          distributedNonProductive:
+            Math.round(distributedNonProductive * 100) / 100,
+          totalDistributed:
+            Math.round(
+              (distributedSalaries +
+                distributedOverhead +
+                distributedNonProductive) *
+                100,
+            ) / 100,
+        };
+      },
     );
-    const canClose = criticalErrors.length === 0;
+
+    const canClose = validationErrors.length === 0;
 
     return {
       year,
@@ -1925,6 +2172,7 @@ export class CostsService {
       validationErrors,
       totalSalaries,
       totalOverhead,
+      totalNonProductive,
       totalRevenue,
       distributions,
     };
@@ -1960,9 +2208,14 @@ export class CostsService {
 
     // Execute closing in a transaction
     await this.prisma.$transaction(async (tx) => {
-      // Snapshot base salaries for all active users
+      // Snapshot base salaries for all active non-GUEST users
       const users = await tx.user.findMany({
-        where: { companyId, isActive: true, deletedAt: null },
+        where: {
+          companyId,
+          isActive: true,
+          deletedAt: null,
+          relation: { not: 'GUEST' },
+        },
         select: { id: true, salary: true },
       });
 
@@ -2026,6 +2279,7 @@ export class CostsService {
 
       // Create distribution records
       for (const dist of preview.distributions) {
+        // Note: distributedNonProductive will be recognized after `pnpm prisma generate`
         await tx.projectMonthlyDistribution.create({
           data: {
             closingId: closing.id,
@@ -2034,8 +2288,11 @@ export class CostsService {
             revenueSharePercent: dist.revenueSharePercent,
             distributedSalaries: dist.distributedSalaries,
             distributedOverhead: dist.distributedOverhead,
+            distributedNonProductive: dist.distributedNonProductive,
             totalDistributed: dist.totalDistributed,
-          },
+          } as Parameters<
+            typeof tx.projectMonthlyDistribution.create
+          >[0]['data'],
         });
       }
     });
@@ -2124,7 +2381,6 @@ export class CostsService {
             paymentPeriod: estimate.provider.paymentPeriod,
           }
         : null,
-      expenseType: estimate.expenseType,
       description: estimate.description,
       createdAt: estimate.createdAt,
       updatedAt: estimate.updatedAt,
@@ -2147,7 +2403,6 @@ export class CostsService {
         name: actual.provider.name,
         paymentPeriod: actual.provider.paymentPeriod,
       },
-      expenseType: actual.expenseType,
       description: actual.description,
       isBilled: actual.isBilled,
       issueDate: actual.issueDate,

@@ -57,10 +57,5 @@ export class UpsertMonthlySalaryDto {
   @IsString()
   @IsOptional()
   @MaxLength(500)
-  extrasDescription?: string;
-
-  @IsString()
-  @IsOptional()
-  @MaxLength(500)
   notes?: string;
 }

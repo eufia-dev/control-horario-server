@@ -1,5 +1,4 @@
 import {
-  IsEnum,
   IsInt,
   IsNotEmpty,
   IsNumber,
@@ -10,14 +9,6 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-
-export enum ExternalCostExpenseType {
-  TRANSFER_PRICING = 'TRANSFER_PRICING',
-  PROJECT_EXTERNALS = 'PROJECT_EXTERNALS',
-  OTHER_PROFESSIONALS = 'OTHER_PROFESSIONALS',
-  STRUCTURE_COSTS = 'STRUCTURE_COSTS',
-  OTHER = 'OTHER',
-}
 
 export class CreateCostEstimateDto {
   @IsInt()
@@ -38,10 +29,6 @@ export class CreateCostEstimateDto {
   @IsUUID()
   @IsOptional()
   providerId?: string;
-
-  @IsEnum(ExternalCostExpenseType)
-  @IsOptional()
-  expenseType?: ExternalCostExpenseType;
 
   @IsString()
   @IsOptional()

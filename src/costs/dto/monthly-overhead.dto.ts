@@ -13,29 +13,17 @@ import {
 
 // Enum for overhead cost types (matches Prisma schema)
 export enum OverheadCostType {
-  RENT = 'RENT',
-  UTILITIES = 'UTILITIES',
-  INSURANCE = 'INSURANCE',
-  SOFTWARE_LICENSES = 'SOFTWARE_LICENSES',
-  MARKETING = 'MARKETING',
-  OFFICE_SUPPLIES = 'OFFICE_SUPPLIES',
-  PROFESSIONAL_SERVICES = 'PROFESSIONAL_SERVICES',
-  TAXES_FEES = 'TAXES_FEES',
-  DEPRECIATION = 'DEPRECIATION',
+  TRANSFER_PRICING = 'TRANSFER_PRICING',
+  OTHER_PROFESSIONALS = 'OTHER_PROFESSIONALS',
+  STRUCTURE_COSTS = 'STRUCTURE_COSTS',
   OTHER = 'OTHER',
 }
 
 // Spanish labels for frontend
 export const OverheadCostTypeLabels: Record<OverheadCostType, string> = {
-  [OverheadCostType.RENT]: 'Alquiler',
-  [OverheadCostType.UTILITIES]: 'Suministros',
-  [OverheadCostType.INSURANCE]: 'Seguros',
-  [OverheadCostType.SOFTWARE_LICENSES]: 'Licencias de software',
-  [OverheadCostType.MARKETING]: 'Marketing',
-  [OverheadCostType.OFFICE_SUPPLIES]: 'Material de oficina',
-  [OverheadCostType.PROFESSIONAL_SERVICES]: 'Servicios profesionales',
-  [OverheadCostType.TAXES_FEES]: 'Impuestos y tasas',
-  [OverheadCostType.DEPRECIATION]: 'Amortización',
+  [OverheadCostType.TRANSFER_PRICING]: 'Precios de transferencia',
+  [OverheadCostType.OTHER_PROFESSIONALS]: 'Otros profesionales',
+  [OverheadCostType.STRUCTURE_COSTS]: 'Costes de estructura',
   [OverheadCostType.OTHER]: 'Otros',
 };
 

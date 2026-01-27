@@ -14,7 +14,6 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
-import { ExternalCostExpenseType } from './create-cost-estimate.dto.js';
 
 // Revenue update DTO (all fields optional - only update provided fields)
 export class RevenueUpdateDto {
@@ -53,10 +52,6 @@ export class CostEstimateOperationDto {
   @IsUUID()
   @IsOptional()
   providerId?: string;
-
-  @IsEnum(ExternalCostExpenseType)
-  @IsOptional()
-  expenseType?: ExternalCostExpenseType;
 
   @IsString()
   @IsOptional()

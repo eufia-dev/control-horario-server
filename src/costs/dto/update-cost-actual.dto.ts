@@ -1,7 +1,6 @@
 import {
   IsBoolean,
   IsDateString,
-  IsEnum,
   IsInt,
   IsNotEmpty,
   IsNumber,
@@ -12,7 +11,6 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { ExternalCostExpenseType } from './create-cost-estimate.dto.js';
 
 export class UpdateCostActualDto {
   @IsInt()
@@ -36,10 +34,6 @@ export class UpdateCostActualDto {
   @IsNotEmpty()
   @IsOptional()
   providerId?: string;
-
-  @IsEnum(ExternalCostExpenseType)
-  @IsOptional()
-  expenseType?: ExternalCostExpenseType;
 
   @IsString()
   @IsOptional()
