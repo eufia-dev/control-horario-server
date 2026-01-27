@@ -225,6 +225,14 @@ model Provider {
   name          String @db.VarChar(255)
   paymentPeriod Int    @map("payment_period") // Payment period in days (e.g., 30, 60, 90)
 
+  fiscalName String? @map("fiscal_name") @db.VarChar(255)
+  cif        String? @db.VarChar(50)
+  phone      String? @db.VarChar(50)
+  email      String? @db.VarChar(320)
+  notes      String?
+  type       String? @db.VarChar(100)
+  location   String? @db.VarChar(500)
+
   company               Company                       @relation(fields: [companyId], references: [id])
   externalCostEstimates ProjectExternalCostEstimate[]
   externalCostActuals   ProjectExternalCostActual[]

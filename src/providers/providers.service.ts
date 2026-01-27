@@ -13,6 +13,13 @@ export interface ProviderResponse {
   id: string;
   name: string;
   paymentPeriod: number; // Payment period in days
+  fiscalName: string | null;
+  cif: string | null;
+  phone: string | null;
+  email: string | null;
+  notes: string | null;
+  type: string | null;
+  location: string | null;
   createdAt: Date;
 }
 
@@ -65,6 +72,13 @@ export class ProvidersService {
       data: {
         name: dto.name,
         paymentPeriod: dto.paymentPeriod,
+        fiscalName: dto.fiscalName,
+        cif: dto.cif,
+        phone: dto.phone,
+        email: dto.email,
+        notes: dto.notes,
+        type: dto.type,
+        location: dto.location,
         companyId,
       },
     });
@@ -107,6 +121,13 @@ export class ProvidersService {
       data: {
         name: dto.name,
         paymentPeriod: dto.paymentPeriod,
+        fiscalName: dto.fiscalName,
+        cif: dto.cif,
+        phone: dto.phone,
+        email: dto.email,
+        notes: dto.notes,
+        type: dto.type,
+        location: dto.location,
       },
     });
 
@@ -150,6 +171,13 @@ export class ProvidersService {
       id: provider.id,
       name: provider.name,
       paymentPeriod: provider.paymentPeriod,
+      fiscalName: provider.fiscalName,
+      cif: provider.cif,
+      phone: provider.phone,
+      email: provider.email,
+      notes: provider.notes,
+      type: provider.type,
+      location: provider.location,
       createdAt: provider.createdAt,
     };
   }
