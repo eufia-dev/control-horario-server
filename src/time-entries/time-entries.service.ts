@@ -804,32 +804,79 @@ export class TimeEntriesService {
       }
     }
 
+    // Get existing entry to use its values for validation
+    const existing = await this.prisma.timeEntry.findUnique({
+      where: { id },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(
+        `Registro de tiempo con ID ${id} no encontrado`,
+      );
+    }
+
+    const finalStartTime = updateTimeEntryDto.startTime
+      ? new Date(updateTimeEntryDto.startTime)
+      : existing.startTime;
+    const finalEndTime = updateTimeEntryDto.endTime
+      ? new Date(updateTimeEntryDto.endTime)
+      : existing.endTime;
+
     // Validate that time entries are not being updated to future days
     if (updateTimeEntryDto.startTime || updateTimeEntryDto.endTime) {
-      const existing = await this.prisma.timeEntry.findUnique({
-        where: { id },
-      });
-
-      if (!existing) {
-        throw new NotFoundException(
-          `Registro de tiempo con ID ${id} no encontrado`,
-        );
-      }
-
       const tomorrow = new Date();
       tomorrow.setHours(0, 0, 0, 0);
       tomorrow.setDate(tomorrow.getDate() + 1);
 
-      const finalStartTime = updateTimeEntryDto.startTime
-        ? new Date(updateTimeEntryDto.startTime)
-        : existing.startTime;
-      const finalEndTime = updateTimeEntryDto.endTime
-        ? new Date(updateTimeEntryDto.endTime)
-        : existing.endTime;
-
       if (finalStartTime >= tomorrow || finalEndTime >= tomorrow) {
         throw new BadRequestException(
           'No se pueden modificar registros de tiempo para días futuros',
+        );
+      }
+    }
+
+    // Check for overlapping time entries (excluding the current entry being updated)
+    const overlappingEntry = await this.prisma.timeEntry.findFirst({
+      where: {
+        userId: existing.userId,
+        companyId,
+        id: { not: id }, // Exclude the current entry being updated
+        OR: [
+          // Updated entry starts during an existing entry
+          {
+            startTime: { lte: finalStartTime },
+            endTime: { gt: finalStartTime },
+          },
+          // Updated entry ends during an existing entry
+          {
+            startTime: { lt: finalEndTime },
+            endTime: { gte: finalEndTime },
+          },
+          // Updated entry completely contains an existing entry
+          {
+            startTime: { gte: finalStartTime },
+            endTime: { lte: finalEndTime },
+          },
+        ],
+      },
+    });
+
+    if (overlappingEntry) {
+      throw new ConflictException(
+        'No se puede actualizar el registro porque se solapa con otro registro de tiempo existente',
+      );
+    }
+
+    // Check if user has an active timer and the updated entry overlaps with it
+    const activeTimer = await this.prisma.activeTimer.findFirst({
+      where: { userId: existing.userId, companyId },
+    });
+
+    if (activeTimer) {
+      // Updated entry must end before the active timer started
+      if (finalEndTime > activeTimer.startTime) {
+        throw new ConflictException(
+          'No se puede actualizar el registro porque se solapa con el temporizador activo. Solo puedes tener registros anteriores al inicio del temporizador.',
         );
       }
     }
